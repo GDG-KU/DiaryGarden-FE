@@ -1,3 +1,4 @@
+import 'package:diary_garden/login_page.dart';
 import 'package:flutter/material.dart';
 import 'home_page.dart'; // ✅ 여기서 불러오기
 
@@ -11,10 +12,14 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      routes: {
+        '/login': (context) => LoginPage(),
+        '/home': (context) => HomePage(),
+      },
       debugShowCheckedModeBanner: false,
       title: 'Dairy Garden',
       theme: ThemeData(primarySwatch: Colors.green),
-      home: const HomePage(), // ✅ 처음 실행할 때 보여줄 페이지
+      home: LoginPage(), // ✅ 처음 실행할 때 보여줄 페이지
     );
   }
 }
