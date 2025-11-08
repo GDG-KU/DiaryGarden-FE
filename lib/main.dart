@@ -1,3 +1,4 @@
+import 'package:diary_garden/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -40,37 +41,14 @@ class MyApp extends StatelessWidget {
         );
 
     return MaterialApp(
+      routes: {
+        '/login': (context) => LoginPage(),
+        '/home': (context) => HomePage(),
+      },
       debugShowCheckedModeBanner: false,
-      title: 'Diary Garden',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: colorScheme,
-        scaffoldBackgroundColor: AppColors.background,
-        textTheme: baseTextTheme,
-        appBarTheme: AppBarTheme(
-          backgroundColor: AppColors.trunk,
-          foregroundColor: AppColors.textOnTrunk,
-          elevation: 0,
-          titleTextStyle: baseTextTheme.titleLarge?.copyWith(
-            color: AppColors.textOnTrunk,
-            fontWeight: FontWeight.w600,
-          ),
-          iconTheme: const IconThemeData(color: AppColors.textOnTrunk),
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: AppColors.leafCoral,
-          foregroundColor: AppColors.textOnLeaf,
-        ),
-        chipTheme: ChipThemeData(
-          backgroundColor: AppColors.leafYellow.withValues(alpha: 0.3),
-          labelStyle: baseTextTheme.labelLarge?.copyWith(
-            color: AppColors.textSecondary,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          shape: const StadiumBorder(),
-        ),
-      ),
-      home: const HomePage(),
+      title: 'Dairy Garden',
+      theme: ThemeData(primarySwatch: Colors.green),
+      home: LoginPage(), // ✅ 처음 실행할 때 보여줄 페이지
     );
   }
 }
