@@ -27,11 +27,18 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 /build/
 /coverage/
+
+# Flutter Generated Files (자동 생성 파일들)
+**/generated_plugin_registrant.*
+**/generated_plugins.*
+**/GeneratedPluginRegistrant.*
+**/ephemeral/
 
 # Symbolication related
 app.*.symbols
@@ -39,7 +46,18 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Platform specific build files
 /android/app/debug
 /android/app/profile
 /android/app/release
+/ios/build/
+/macos/build/
+/linux/build/
+/windows/build/
+/web/build/
+
+# Platform specific generated files
+/linux/flutter/
+/windows/flutter/
+/macos/Flutter/ephemeral/
+/ios/Flutter/ephemeral/

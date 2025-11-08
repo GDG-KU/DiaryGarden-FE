@@ -2,11 +2,17 @@
 import 'package:flutter/material.dart';
 import 'garden_main_page.dart';
 
+import 'diary_read_page.dart';
+import 'diary_write_page.dart';
+import 'theme/app_colors.dart';
+
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Diary Gardening')),
       body: Center(
@@ -22,5 +28,14 @@ class HomePage extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _hexWithoutAlpha(Color color) {
+    int to8Bit(double channel) => ((channel * 255.0).round()) & 0xff;
+
+    final red = to8Bit(color.r).toRadixString(16).padLeft(2, '0');
+    final green = to8Bit(color.g).toRadixString(16).padLeft(2, '0');
+    final blue = to8Bit(color.b).toRadixString(16).padLeft(2, '0');
+    return '$red$green$blue'.toUpperCase();
   }
 }
