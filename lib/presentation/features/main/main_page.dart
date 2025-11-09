@@ -55,13 +55,13 @@ class _FrostedStatusBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = Colors.black.withOpacity(0.06);
+    final borderColor = Colors.black.withValues(alpha: 0.06);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Container(
         height: 58,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.82),
+          color: Colors.white.withValues(alpha: 0.82),
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(44),
             topRight: Radius.circular(44),
@@ -88,9 +88,9 @@ class _FrostedStatusBar extends StatelessWidget {
             ),
             const Spacer(),
             Icon(Icons.signal_cellular_alt_rounded,
-                color: Colors.black.withOpacity(0.8), size: 18),
+                color: Colors.black.withValues(alpha: 0.8), size: 18),
             const SizedBox(width: 8),
-            Icon(Icons.wifi, color: Colors.black.withOpacity(0.8), size: 18),
+            Icon(Icons.wifi, color: Colors.black.withValues(alpha: 0.8), size: 18),
             const SizedBox(width: 8),
             Container(
               width: 26,
@@ -122,7 +122,7 @@ class _TopActionsRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = Colors.black.withOpacity(0.1);
+    final borderColor = Colors.black.withValues(alpha: 0.1);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
@@ -193,7 +193,7 @@ class _DayHeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textColor = Colors.black.withOpacity(0.65);
+    final textColor = Colors.black.withValues(alpha: 0.65);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Row(
@@ -241,7 +241,7 @@ class _DayBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = Colors.black.withOpacity(0.08);
+    final borderColor = Colors.black.withValues(alpha: 0.08);
     return Container(
       width: 44,
       height: 44,
@@ -261,7 +261,7 @@ class _DayBubble extends StatelessWidget {
         border: written ? null : Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.12),
+            color: Colors.black.withValues(alpha: 0.12),
             blurRadius: 12,
             offset: const Offset(0, 6),
           )
