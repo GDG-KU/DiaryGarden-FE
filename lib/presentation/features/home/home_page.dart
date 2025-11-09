@@ -1,10 +1,10 @@
 // lib/pages/home_page.dart
 import 'package:flutter/material.dart';
-import 'garden_main_page.dart';
+import 'package:diary_garden/presentation/features/forest/garden_main_page.dart';
 
-import 'diary_read_page.dart';
-import 'diary_write_page.dart';
-import 'theme/app_colors.dart';
+import '../diary/diary_read_page.dart';
+import '../diary/diary_write_page.dart';
+import '../../../core/theme/app_colors.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});

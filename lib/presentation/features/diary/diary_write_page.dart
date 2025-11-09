@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'theme/app_colors.dart';
+import '../../../core/theme/app_colors.dart';
 
 class DiaryWritePage extends StatefulWidget {
   const DiaryWritePage({super.key});
