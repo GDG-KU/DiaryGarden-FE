@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:diary_garden/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class MainPage extends StatelessWidget {
   const MainPage({super.key});
@@ -13,9 +14,7 @@ class MainPage extends StatelessWidget {
       body: SafeArea(
         child: Stack(
           children: const [
-            Positioned.fill(
-              child: _MainScrollView(),
-            ),
+            Positioned.fill(child: _MainScrollView()),
             _FloatingWriteButton(),
           ],
         ),
@@ -87,10 +86,17 @@ class _FrostedStatusBar extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            Icon(Icons.signal_cellular_alt_rounded,
-                color: Colors.black.withValues(alpha: 0.8), size: 18),
+            Icon(
+              Icons.signal_cellular_alt_rounded,
+              color: Colors.black.withValues(alpha: 0.8),
+              size: 18,
+            ),
             const SizedBox(width: 8),
-            Icon(Icons.wifi, color: Colors.black.withValues(alpha: 0.8), size: 18),
+            Icon(
+              Icons.wifi,
+              color: Colors.black.withValues(alpha: 0.8),
+              size: 18,
+            ),
             const SizedBox(width: 8),
             Container(
               width: 26,
@@ -128,13 +134,21 @@ class _TopActionsRow extends StatelessWidget {
       child: Row(
         children: [
           _IconBadge(
-            icon: Icons.menu_rounded,
             borderColor: borderColor,
+            child: SvgPicture.asset(
+              'assets/images/Menu.svg',
+              width: 20,
+              height: 20,
+            ),
           ),
           const Spacer(),
           _IconBadge(
-            icon: Icons.calendar_today_outlined,
             borderColor: borderColor,
+            child: SvgPicture.asset(
+              'assets/images/calendar.svg',
+              width: 20,
+              height: 20,
+            ),
           ),
           const SizedBox(width: 12),
           DecoratedBox(
@@ -142,10 +156,12 @@ class _TopActionsRow extends StatelessWidget {
               border: Border.all(color: borderColor),
               borderRadius: BorderRadius.circular(24),
             ),
-            child: const CircleAvatar(
-              radius: 24,
-              backgroundImage: NetworkImage(
-                'http://localhost:3845/assets/ee796b514594b6828175997e69d70b734e0c7e5c.png',
+            child: ClipOval(
+              child: SvgPicture.asset(
+                'assets/images/Profile.svg',
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
               ),
             ),
           ),
@@ -156,12 +172,9 @@ class _TopActionsRow extends StatelessWidget {
 }
 
 class _IconBadge extends StatelessWidget {
-  const _IconBadge({
-    required this.icon,
-    required this.borderColor,
-  });
+  const _IconBadge({required this.child, required this.borderColor});
 
-  final IconData icon;
+  final Widget child;
   final Color borderColor;
 
   @override
@@ -181,7 +194,7 @@ class _IconBadge extends StatelessWidget {
           ),
         ],
       ),
-      child: Icon(icon, color: Colors.black87),
+      child: Center(child: child),
     );
   }
 }
@@ -208,7 +221,7 @@ class _DayHeaderRow extends StatelessWidget {
                 color: textColor,
                 fontWeight: FontWeight.w500,
               ),
-            )
+            ),
         ],
       ),
     );
@@ -226,9 +239,7 @@ class _DayStatusRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          for (final written in _status) _DayBubble(written: written),
-        ],
+        children: [for (final written in _status) _DayBubble(written: written)],
       ),
     );
   }
@@ -248,10 +259,7 @@ class _DayBubble extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: written
             ? const LinearGradient(
-                colors: [
-                  Color(0xFFFFF6D8),
-                  Color(0xFFFACF8F),
-                ],
+                colors: [Color(0xFFFFF6D8), Color(0xFFFACF8F)],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               )
@@ -264,7 +272,7 @@ class _DayBubble extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.12),
             blurRadius: 12,
             offset: const Offset(0, 6),
-          )
+          ),
         ],
       ),
       child: Icon(
@@ -459,10 +467,7 @@ class _FloatingWriteButton extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: const LinearGradient(
-                colors: [
-                  Color(0xFFFFD071),
-                  Color(0xFFFF9A56),
-                ],
+                colors: [Color(0xFFFFD071), Color(0xFFFF9A56)],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
               ),
@@ -474,11 +479,7 @@ class _FloatingWriteButton extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Icon(
-              Icons.edit,
-              color: Colors.white,
-              size: 36,
-            ),
+            child: const Icon(Icons.edit, color: Colors.white, size: 36),
           ),
         ),
       ),
