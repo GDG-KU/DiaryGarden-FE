@@ -1,6 +1,6 @@
 // lib/pages/home_page.dart
 import 'package:flutter/material.dart';
-import 'garden_main_page.dart';
+import 'package:diary_garden/presentation/features/forest/garden_main_page.dart';
 
 import '../diary/diary_read_page.dart';
 import '../diary/diary_write_page.dart';
