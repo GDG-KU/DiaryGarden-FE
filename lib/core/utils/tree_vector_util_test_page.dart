@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'tree_vector_util.dart';
 
@@ -10,11 +12,29 @@ class TreeVectorUtilTestPage extends StatefulWidget {
 }
 
 class _TreeVectorUtilTestPageState extends State<TreeVectorUtilTestPage> {
-  int _currentLevel = 2;
-  final List<Map<String, dynamic>> _emotionData = [
-    {'emotion': 'happy', 'score': 0.8},
-    {'emotion': 'calm', 'score': 0.5},
-  ];
+  final _random = Random();
+  
+  // Generate random emotion
+  String _randomEmotion() {
+    final emotions = ['happy', 'sad', 'angry', 'calm'];
+    return emotions[_random.nextInt(emotions.length)];
+  }
+  
+  // Generate random score between 0.0 and 1.0
+  double _randomScore() {
+    return (_random.nextDouble() * 100).round() / 100.0;
+  }
+  
+  // Generate N random diary entries
+  List<Map<String, dynamic>> _generateDiaries(int count) {
+    return List.generate(
+      count,
+      (index) => {
+        'emotion': _randomEmotion(),
+        'score': _randomScore(),
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,54 +48,25 @@ class _TreeVectorUtilTestPageState extends State<TreeVectorUtilTestPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Level Control
+            // Info Card
             Card(
+              color: Colors.blue[50],
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Tree Level: $_currentLevel',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Slider(
-                      value: _currentLevel.toDouble(),
-                      min: 1,
-                      max: 4,
-                      divisions: 3,
-                      label: 'Level $_currentLevel',
-                      onChanged: (value) {
-                        setState(() {
-                          _currentLevel = value.toInt();
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Emotion Data Display
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Emotion Data:',
-                      style: Theme.of(context).textTheme.titleMedium,
+                      '🌳 Tree Level Auto-Calculation',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    ..._emotionData.map((data) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(
-                            '${data['emotion']}: ${data['score']}',
-                            style: const TextStyle(fontFamily: 'monospace'),
-                          ),
-                        )),
+                    const Text('• 0 diaries → Level 1 (seed)'),
+                    const Text('• 1-2 diaries → Level 2 (2 leaves)'),
+                    const Text('• 3-4 diaries → Level 3 (5 leaves)'),
+                    const Text('• 5-7 diaries → Level 4 (10 leaves)'),
                   ],
                 ),
               ),
@@ -84,63 +75,19 @@ class _TreeVectorUtilTestPageState extends State<TreeVectorUtilTestPage> {
 
             // Test Cases
             const Text(
-              'Test Cases:',
+              'Test Cases (0-7 Diaries):',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
 
-            // Test 1: Single emotion
-            _buildTestCase(
-              title: 'Test 1: Single Happy Emotion',
-              level: _currentLevel,
-              emotionData: [
-                {'emotion': 'happy', 'score': 1.0},
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Test 2: Multiple emotions
-            _buildTestCase(
-              title: 'Test 2: Mixed Emotions',
-              level: _currentLevel,
-              emotionData: [
-                {'emotion': 'happy', 'score': 0.6},
-                {'emotion': 'calm', 'score': 0.3},
-                {'emotion': 'sad', 'score': 0.1},
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Test 3: No scores (should use defaults)
-            _buildTestCase(
-              title: 'Test 3: No Scores (Default Weights)',
-              level: _currentLevel,
-              emotionData: [
-                {'emotion': 'angry'},
-                {'emotion': 'calm'},
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Test 4: Current emotion data
-            _buildTestCase(
-              title: 'Test 4: Current Emotion Data',
-              level: _currentLevel,
-              emotionData: _emotionData,
-            ),
-            const SizedBox(height: 16),
-
-            // Test 5: All emotions
-            _buildTestCase(
-              title: 'Test 5: All Emotions',
-              level: _currentLevel,
-              emotionData: [
-                {'emotion': 'happy', 'score': 0.25},
-                {'emotion': 'sad', 'score': 0.25},
-                {'emotion': 'angry', 'score': 0.25},
-                {'emotion': 'calm', 'score': 0.25},
-              ],
-            ),
+            // Generate test cases for 0-7 diaries
+            for (int i = 0; i <= 7; i++) ...[
+              _buildTestCase(
+                title: 'Test Case: $i ${i == 1 ? 'Diary' : 'Diaries'}',
+                emotionData: _generateDiaries(i),
+              ),
+              const SizedBox(height: 16),
+            ],
           ],
         ),
       ),
@@ -148,9 +95,9 @@ class _TreeVectorUtilTestPageState extends State<TreeVectorUtilTestPage> {
         onPressed: () {
           // Clear cache to force re-render
           TreeVectorUtil.clearCache();
-          setState(() {});
+          setState(() {}); // Regenerate with new random values
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Cache cleared! Trees will re-render.')),
+            const SnackBar(content: Text('Regenerated with new random diaries!')),
           );
         },
         child: const Icon(Icons.refresh),
@@ -160,7 +107,6 @@ class _TreeVectorUtilTestPageState extends State<TreeVectorUtilTestPage> {
 
   Widget _buildTestCase({
     required String title,
-    required int level,
     required List<Map<String, dynamic>> emotionData,
   }) {
     return Card(
@@ -179,6 +125,14 @@ class _TreeVectorUtilTestPageState extends State<TreeVectorUtilTestPage> {
             ),
             const SizedBox(height: 8),
             Text(
+              'Diaries: ${emotionData.length} → Auto Level',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue[700],
+              ),
+            ),
+            Text(
               'Emotions: ${emotionData.map((e) => '${e['emotion']}${e['score'] != null ? '(${e['score']})' : ''}').join(', ')}',
               style: TextStyle(
                 fontSize: 12,
@@ -189,7 +143,6 @@ class _TreeVectorUtilTestPageState extends State<TreeVectorUtilTestPage> {
             Center(
               child: FutureBuilder<TreeVectorData>(
                 future: TreeVectorUtil.svgFor(
-                  level: level,
                   emotionData: emotionData,
                   debug: true, // Enable debug logging
                 ),
