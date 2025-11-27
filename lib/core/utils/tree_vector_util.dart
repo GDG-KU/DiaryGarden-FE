@@ -110,18 +110,33 @@ class TreeVectorUtil {
 
   static final Map<int, Future<String>> _templateCache = {};
   static final Map<_TreeCacheKey, Future<TreeVectorData>> _renderCache = {};
+  static const bool _kDebugMode = false; // Set to true to enable debug logging
 
   static Future<TreeVectorData> svgFor({
     required int level,
     required List<Map<String, dynamic>> emotionData,
+    bool debug = false,
   }) {
     final normalizedLevel = level.clamp(1, _treeAssets.length);
     final signature = _canonicalizeEmotionData(emotionData, normalizedLevel);
     final cacheKey = _TreeCacheKey(normalizedLevel, signature.cacheKey);
 
+    if (_kDebugMode || debug) {
+      debugPrint('  TreeVectorUtil.svgFor:');
+      debugPrint('  Level: $normalizedLevel');
+      debugPrint('  Emotion Data: $emotionData');
+      debugPrint('  Signature: ${signature.cacheKey}');
+      debugPrint('  Entries: ${signature.entries.map((e) => '${e.emotion}=${e.score}').join(', ')}');
+    }
+
     return _renderCache.putIfAbsent(cacheKey, () async {
       final template = await _loadTemplate(normalizedLevel);
       final palette = _paletteForSignature(signature);
+      
+      if (_kDebugMode || debug) {
+        debugPrint('  Palette: ${palette.map((c) => _colorToHex(c)).join(', ')}');
+      }
+      
       final adjustedSvg = _applyPalette(template, palette);
       final asset = _treeAssets[normalizedLevel]!;
       return TreeVectorData(
@@ -172,11 +187,15 @@ class TreeVectorUtil {
     final weights = <double>[];
     for (final entry in group) {
       colors.add(_shadeColorForEmotion(entry.emotion, shade));
-      weights.add((entry.score ?? 0).abs());
+      // Use 1.0 as default weight if score is null or 0
+      final weight = entry.score ?? 1.0;
+      weights.add(weight.abs() > 0.001 ? weight.abs() : 1.0);
     }
 
     final totalWeight = weights.fold<double>(0, (sum, value) => sum + value);
-    if (totalWeight == 0) {
+    
+    // If all weights are effectively zero (shouldn't happen now), use equal weights
+    if (totalWeight < 0.001) {
       double r = 0, g = 0, b = 0;
       for (final color in colors) {
         r += color.red;
@@ -192,10 +211,10 @@ class TreeVectorUtil {
       );
     }
 
+    // Weighted average of colors
     double r = 0, g = 0, b = 0;
     for (var i = 0; i < colors.length; i++) {
       final weight = weights[i];
-      if (weight <= 0) continue;
       r += colors[i].red * weight;
       g += colors[i].green * weight;
       b += colors[i].blue * weight;
@@ -336,9 +355,19 @@ class TreeVectorUtil {
     for (var i = 0; i < _leafShades.length; i++) {
       final placeholder = _leafShades[i].placeholderHex;
       final replacement = _colorToHex(palette[i]);
+      final placeholderUpper = placeholder.toUpperCase();
+      final placeholderLower = placeholder.toLowerCase();
+      
       result = result
-          .replaceAll(placeholder, replacement)
-          .replaceAll(placeholder.toLowerCase(), replacement);
+          .replaceAll(placeholderUpper, replacement)
+          .replaceAll(placeholderLower, replacement);
+          
+      if (placeholder.startsWith('#')) {
+        final withoutHash = placeholder.substring(1);
+        result = result
+            .replaceAll(withoutHash.toUpperCase(), replacement.substring(1))
+            .replaceAll(withoutHash.toLowerCase(), replacement.substring(1));
+      }
     }
     return result;
   }
