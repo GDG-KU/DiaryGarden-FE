@@ -87,58 +87,59 @@ class TreeVectorUtil {
     4: _TreeAsset('assets/svgs/tree_level_4.svg', Size(238, 319)),
   };
 
-  static const Map<int, int> _levelEmotionCapacity = {1: 0, 2: 2, 3: 5, 4: 11};
+  // Number of colored leaves per level
+  static const Map<int, int> _levelLeafCount = {
+    1: 0,
+    2: 2,
+    3: 5,
+    4: 10,
+  };
 
-  static const List<_LeafShade> _leafShades = [
-    _LeafShade(
-      placeholderHex: '#93E6AA',
-      lightnessDelta: 0.18,
-      saturationDelta: -0.04,
-    ),
-    _LeafShade(placeholderHex: '#9FC0F5', lightnessDelta: 0.02),
-    _LeafShade(
-      placeholderHex: '#EB875F',
-      lightnessDelta: -0.12,
-      saturationDelta: 0.04,
-    ),
-    _LeafShade(
-      placeholderHex: '#FAE469',
-      lightnessDelta: 0.26,
-      saturationDelta: -0.12,
-    ),
-  ];
+  // Determine tree level based on diary count
+  static int _levelForDiaryCount(int count) {
+    if (count == 0) return 1;
+    if (count <= 2) return 2;
+    if (count <= 4) return 3;
+    return 4; // 5-7 diaries
+  }
 
   static final Map<int, Future<String>> _templateCache = {};
   static final Map<_TreeCacheKey, Future<TreeVectorData>> _renderCache = {};
   static const bool _kDebugMode = false; // Set to true to enable debug logging
 
+  /// Generate tree SVG colored by diary emotions
+  /// 
+  /// Each item in [emotionData] represents one diary entry.
+  /// The tree level is automatically determined by the number of entries.
+  /// Each diary's dominant emotion determines one leaf's color.
   static Future<TreeVectorData> svgFor({
-    required int level,
     required List<Map<String, dynamic>> emotionData,
     bool debug = false,
   }) {
-    final normalizedLevel = level.clamp(1, _treeAssets.length);
-    final signature = _canonicalizeEmotionData(emotionData, normalizedLevel);
-    final cacheKey = _TreeCacheKey(normalizedLevel, signature.cacheKey);
+    final diaryCount = emotionData.length;
+    final level = _levelForDiaryCount(diaryCount);
+    final signature = _canonicalizeEmotionData(emotionData, level);
+    final cacheKey = _TreeCacheKey(level, signature.cacheKey);
 
     if (_kDebugMode || debug) {
-      debugPrint('  TreeVectorUtil.svgFor:');
-      debugPrint('  Level: $normalizedLevel');
+      debugPrint('🌳 TreeVectorUtil.svgFor:');
+      debugPrint('  Diary Count: $diaryCount');
+      debugPrint('  Auto Level: $level');
       debugPrint('  Emotion Data: $emotionData');
       debugPrint('  Signature: ${signature.cacheKey}');
       debugPrint('  Entries: ${signature.entries.map((e) => '${e.emotion}=${e.score}').join(', ')}');
     }
 
     return _renderCache.putIfAbsent(cacheKey, () async {
-      final template = await _loadTemplate(normalizedLevel);
-      final palette = _paletteForSignature(signature);
+      final template = await _loadTemplate(level);
+      final palette = _paletteForDiaries(signature.entries, level);
       
       if (_kDebugMode || debug) {
         debugPrint('  Palette: ${palette.map((c) => _colorToHex(c)).join(', ')}');
       }
       
       final adjustedSvg = _applyPalette(template, palette);
-      final asset = _treeAssets[normalizedLevel]!;
+      final asset = _treeAssets[level]!;
       return TreeVectorData(
         svg: adjustedSvg,
         logicalSize: asset.size,
@@ -155,89 +156,48 @@ class TreeVectorUtil {
     );
   }
 
-  static List<Color> _paletteForSignature(_EmotionSignature signature) {
-    final groups = _distributeEntries(signature.entries);
-    return List<Color>.generate(
-      _leafShades.length,
-      (index) => _mixGroupColor(groups[index], _leafShades[index]),
-      growable: false,
-    );
-  }
-
-  static List<List<_EmotionEntry>> _distributeEntries(
-    List<_EmotionEntry> entries,
-  ) {
-    final groupCount = _leafShades.length;
-    final groups = List.generate(groupCount, (_) => <_EmotionEntry>[]);
-    if (entries.isEmpty) {
-      return groups;
-    }
-    for (var i = 0; i < entries.length; i++) {
-      groups[i % groupCount].add(entries[i]);
-    }
-    return groups;
-  }
-
-  static Color _mixGroupColor(List<_EmotionEntry> group, _LeafShade shade) {
-    if (group.isEmpty) {
-      return _shadeColorForEmotion('default', shade);
-    }
-
-    final colors = <Color>[];
-    final weights = <double>[];
-    for (final entry in group) {
-      colors.add(_shadeColorForEmotion(entry.emotion, shade));
-      // Use 1.0 as default weight if score is null or 0
-      final weight = entry.score ?? 1.0;
-      weights.add(weight.abs() > 0.001 ? weight.abs() : 1.0);
-    }
-
-    final totalWeight = weights.fold<double>(0, (sum, value) => sum + value);
+  /// Assign colors to leaves based on diary entries
+  /// 
+  /// Returns a list of colors in the order they appear in the SVG file.
+  /// The order is based on the placeholder colors in the SVG.
+  static List<Color> _paletteForDiaries(List<_EmotionEntry> diaries, int level) {
+    final leafCount = _levelLeafCount[level] ?? 0;
     
-    // If all weights are effectively zero (shouldn't happen now), use equal weights
-    if (totalWeight < 0.001) {
-      double r = 0, g = 0, b = 0;
-      for (final color in colors) {
-        r += color.red;
-        g += color.green;
-        b += color.blue;
+    if (leafCount == 0 || diaries.isEmpty) {
+      return []; // No leaves to color
+    }
+
+    // Count occurrences of each emotion to find dominant
+    final emotionCounts = <String, int>{};
+    for (final diary in diaries) {
+      emotionCounts[diary.emotion] = (emotionCounts[diary.emotion] ?? 0) + 1;
+    }
+    
+    // Find dominant emotion (most frequent)
+    String dominantEmotion = 'happy'; // default
+    int maxCount = 0;
+    for (final entry in emotionCounts.entries) {
+      if (entry.value > maxCount) {
+        maxCount = entry.value;
+        dominantEmotion = entry.key;
       }
-      final inv = 1 / colors.length;
-      return Color.fromARGB(
-        255,
-        _channel(r * inv),
-        _channel(g * inv),
-        _channel(b * inv),
-      );
     }
 
-    // Weighted average of colors
-    double r = 0, g = 0, b = 0;
-    for (var i = 0; i < colors.length; i++) {
-      final weight = weights[i];
-      r += colors[i].red * weight;
-      g += colors[i].green * weight;
-      b += colors[i].blue * weight;
+    // Assign each diary to a leaf color
+    final colors = <Color>[];
+    
+    for (int i = 0; i < leafCount; i++) {
+      if (i < diaries.length) {
+        // Assign diary's emotion color
+        colors.add(emotionColor(diaries[i].emotion));
+      } else {
+        // Fill remaining leaves with dominant emotion or transparent
+        colors.add(emotionColor(dominantEmotion).withOpacity(0.5));
+      }
     }
-    final inv = 1 / totalWeight;
-    return Color.fromARGB(
-      255,
-      _channel(r * inv),
-      _channel(g * inv),
-      _channel(b * inv),
-    );
-  }
 
-  static Color _shadeColorForEmotion(String emotion, _LeafShade shade) {
-    final base = _resolveEmotionColor(emotion);
-    return _shift(
-      base,
-      lightnessDelta: shade.lightnessDelta,
-      saturationDelta: shade.saturationDelta,
-    );
+    return colors;
   }
-
-  static int _channel(double value) => value.clamp(0, 255).round();
 
   static Color _resolveEmotionColor(String emotion) {
     if (emotion.isEmpty) {
@@ -250,26 +210,13 @@ class TreeVectorUtil {
     return color;
   }
 
-  static Color _shift(
-    Color color, {
-    double lightnessDelta = 0,
-    double saturationDelta = 0,
-  }) {
-    var hsl = HSLColor.fromColor(color);
-    final newSaturation = (hsl.saturation + saturationDelta).clamp(0.0, 1.0);
-    final newLightness = (hsl.lightness + lightnessDelta).clamp(0.0, 1.0);
-    hsl = hsl.withSaturation(newSaturation);
-    hsl = hsl.withLightness(newLightness);
-    return hsl.toColor();
-  }
-
   static _EmotionSignature _canonicalizeEmotionData(
     List<Map<String, dynamic>> raw,
     int level,
   ) {
     final entries = _parseEmotionEntries(raw);
-    final capacity = _levelEmotionCapacity[level] ?? 0;
-    if (capacity <= 0 || entries.isEmpty) {
+    
+    if (entries.isEmpty) {
       return _EmotionSignature(
         level: level,
         entries: const [],
@@ -277,24 +224,9 @@ class TreeVectorUtil {
       );
     }
 
-    final sorted = List<_EmotionEntry>.from(entries)
-      ..sort((a, b) {
-        final aScore = a.score;
-        final bScore = b.score;
-        if (aScore != null && bScore != null) {
-          final diff = bScore.compareTo(aScore);
-          if (diff != 0) return diff;
-        } else if (aScore != null) {
-          return -1;
-        } else if (bScore != null) {
-          return 1;
-        }
-        return a.order.compareTo(b.order);
-      });
-
-    final limited = sorted.take(capacity).toList(growable: false);
+    // Keep all entries in their original order (diary order)
     final keyBuffer = StringBuffer('L$level');
-    for (final e in limited) {
+    for (final e in entries) {
       keyBuffer
         ..write('|')
         ..write(e.emotion)
@@ -305,7 +237,7 @@ class TreeVectorUtil {
     return _EmotionSignature(
       level: level,
       cacheKey: keyBuffer.toString(),
-      entries: limited,
+      entries: List.unmodifiable(entries),
     );
   }
 
@@ -351,24 +283,43 @@ class TreeVectorUtil {
   }
 
   static String _applyPalette(String svg, List<Color> palette) {
+    if (palette.isEmpty) {
+      return svg; // No colors to apply
+    }
+
     var result = svg;
-    for (var i = 0; i < _leafShades.length; i++) {
-      final placeholder = _leafShades[i].placeholderHex;
-      final replacement = _colorToHex(palette[i]);
-      final placeholderUpper = placeholder.toUpperCase();
-      final placeholderLower = placeholder.toLowerCase();
+    var colorIndex = 0;
+    
+    // List of placeholder colors in the order they should be replaced
+    // This matches the emotion colors that appear in SVG files
+    final placeholders = [
+      '#EB875F', // angry/coral
+      '#93E6AA', // calm/green  
+      '#9FC0F5', // sad/blue
+      '#FAE469', // happy/yellow
+    ];
+    
+    // Replace each placeholder with colors from palette in order
+    for (final placeholder in placeholders) {
+      // Find all occurrences of this placeholder in the SVG
+      var occurrenceCount = 0;
+      var tempSvg = svg;
+      while (tempSvg.contains(placeholder)) {
+        occurrenceCount++;
+        final index = tempSvg.indexOf(placeholder);
+        tempSvg = tempSvg.substring(index + placeholder.length);
+      }
       
-      result = result
-          .replaceAll(placeholderUpper, replacement)
-          .replaceAll(placeholderLower, replacement);
-          
-      if (placeholder.startsWith('#')) {
-        final withoutHash = placeholder.substring(1);
-        result = result
-            .replaceAll(withoutHash.toUpperCase(), replacement.substring(1))
-            .replaceAll(withoutHash.toLowerCase(), replacement.substring(1));
+      // Replace each occurrence with sequential colors from palette
+      for (int i = 0; i < occurrenceCount && colorIndex < palette.length; i++) {
+        final replacement = _colorToHex(palette[colorIndex]);
+        // Replace first occurrence
+        result = result.replaceFirst(placeholder, replacement);
+        result = result.replaceFirst(placeholder.toLowerCase(), replacement);
+        colorIndex++;
       }
     }
+    
     return result;
   }
 
@@ -382,18 +333,6 @@ class TreeVectorUtil {
   static void clearCache() {
     _renderCache.clear();
   }
-}
-
-class _LeafShade {
-  const _LeafShade({
-    required this.placeholderHex,
-    this.lightnessDelta = 0,
-    this.saturationDelta = 0,
-  });
-
-  final String placeholderHex;
-  final double lightnessDelta;
-  final double saturationDelta;
 }
 
 class _TreeAsset {
