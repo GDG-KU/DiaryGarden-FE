@@ -4,6 +4,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:diary_garden/presentation/features/home/home_page.dart';
 import 'package:diary_garden/presentation/features/login/login_page.dart';
 import 'core/theme/app_colors.dart';
+import 'core/utils/tree_vector_util_test_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,11 +45,12 @@ class MyApp extends StatelessWidget {
       routes: {
         '/login': (context) => LoginPage(),
         '/home': (context) => HomePage(),
+        '/test': (context) => const TreeVectorUtilTestPage(),
       },
       debugShowCheckedModeBanner: false,
       title: 'Dairy Garden',
       theme: ThemeData(primarySwatch: Colors.green),
-      home: LoginPage(), // ✅ 처음 실행할 때 보여줄 페이지
+      home: const TreeVectorUtilTestPage(), // 🧪 Testing TreeVectorUtil
     );
   }
 }
