@@ -41,11 +41,7 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/images/flower_tree.jpg
-    - assets/images/bubble_tree.jpg
-    - assets/images/Menu.svg
-    - assets/images/Profile.svg
-    - assets/images/calendar.svg
+    - assets/
 
 dev_dependencies:
   flutter_test:
