@@ -53,7 +53,7 @@ class LoginPage extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 // 임시 로그인: 바로 홈으로 이동
-                Navigator.pushReplacementNamed(context, '/home');
+                Navigator.pushReplacementNamed(context, '/main');
               },
               child: Text('로그인'),
             ),
