@@ -44,8 +44,16 @@ flutter:
     - assets/images/flower_tree.jpg
     - assets/images/bubble_tree.jpg
     - assets/images/Menu.svg
-    - assets/images/Profile.svg
+    - assets/images/Profile.png
     - assets/images/calendar.svg
+    - assets/images/WriteButton.png
+    - assets/images/writtenDay.png
+    - assets/images/unWrittenDay.png
+
+  fonts:
+    - family: ShadowsIntoLightTwo
+      fonts:
+        - asset: assets/fonts/ShadowsIntoLightTwo-Regular.ttf
 
 dev_dependencies:
   flutter_test:
