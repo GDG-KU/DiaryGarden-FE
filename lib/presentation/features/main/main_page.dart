@@ -1,9 +1,10 @@
-import 'dart:math' as math;
-
 import 'package:diary_garden/core/config/api_config.dart';
 import 'package:diary_garden/core/theme/app_colors.dart';
 import 'package:diary_garden/data/datasource/diary_api_client.dart';
+import 'package:diary_garden/data/models/diary_entry.dart';
 import 'package:diary_garden/data/models/remote_diary_entry.dart';
+import 'package:diary_garden/presentation/features/diary/diary_read_page.dart';
+import 'package:diary_garden/presentation/features/diary/diary_write_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -76,15 +77,17 @@ class _MainPageState extends State<MainPage> {
 
   String _treeIdForDate(DateTime date) => 'tree-${DateFormat('yyyyMMdd').format(date)}';
 
-  Future<void> _openWriteDialog() async {
-    final targetDate = DateTime.now();
-    await showDialog<void>(
-      context: context,
-      builder: (_) => WriteDiaryDialog(
-        date: targetDate,
-        onSubmit: (title, body) => _submitDiary(targetDate, title, body),
+  Future<void> _openWritePage() async {
+    final bool? saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => DiaryWritePage(
+          onSubmit: (date, title, body) => _submitDiary(date, title, body),
+        ),
       ),
     );
+    if (saved == true) {
+      await _loadRecentDiaries();
+    }
   }
 
   Future<RemoteDiaryEntry> _submitDiary(
@@ -136,9 +139,11 @@ class _MainPageState extends State<MainPage> {
       final entry = await _diaryApiClient.fetchDiary(id: status.diaryId!, authToken: token);
       if (!mounted) return;
       Navigator.of(context).pop();
-      await showDialog<void>(
-        context: context,
-        builder: (_) => ViewDiaryDialog(date: status.date, entry: entry),
+      final diaryEntry = _toDiaryEntry(entry);
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DiaryReadPage(entries: [diaryEntry]),
+        ),
       );
     } catch (error) {
       if (mounted) {
@@ -160,6 +165,18 @@ class _MainPageState extends State<MainPage> {
     if (trimmedBody.isEmpty) return trimmedTitle;
     if (trimmedTitle.isEmpty) return trimmedBody;
     return '$trimmedTitle\n\n$trimmedBody';
+  }
+
+  DiaryEntry _toDiaryEntry(RemoteDiaryEntry entry) {
+    final parsed = splitDiaryContent(entry.content);
+    return DiaryEntry(
+      id: entry.id,
+      title: parsed.title.isEmpty ? '오늘 하루' : parsed.title,
+      content: parsed.body.isEmpty ? parsed.title : parsed.body,
+      date: entry.writtenDate,
+      emotionScores: const {'default': 1.0},
+      dominantEmotion: 'default',
+    );
   }
 
   void _openCalendar() {
@@ -199,7 +216,7 @@ class _MainPageState extends State<MainPage> {
                 onProfileTap: _handleProfileTap,
               ),
             ),
-            _FloatingWriteButton(onPressed: _openWriteDialog),
+            _FloatingWriteButton(onPressed: _openWritePage),
           ],
         ),
       ),
@@ -241,7 +258,7 @@ class _MainScrollView extends StatelessWidget {
           const SizedBox(height: 10),
           _DayStatusRow(statuses: statuses, onTap: onDayTap),
           const SizedBox(height: 40),
-          const _TreeIllustration(),
+          _TreeIllustration(writtenCount: statuses.where((s) => s.hasDiary).length),
         ],
       ),
     );
@@ -456,64 +473,19 @@ class _DayStatusModel {
 }
 
 class _TreeIllustration extends StatelessWidget {
-  const _TreeIllustration();
+  const _TreeIllustration({required this.writtenCount});
 
-  static const _leafPlacements = [
-    _LeafPlacement(
-      alignment: Alignment(0, -0.95),
-      colors: [Color(0xFFFFE08E), Color(0xFFF5C565)],
-      angleDeg: 8,
-      size: Size(120, 48),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(-0.65, -0.55),
-      colors: [Color(0xFFAEE1C5), Color(0xFF87C6A4)],
-      angleDeg: -24,
-      size: Size(84, 34),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(0.7, -0.4),
-      colors: [Color(0xFF9FC0F5), Color(0xFF88A8EA)],
-      angleDeg: 24,
-      size: Size(78, 32),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(-0.3, -0.15),
-      colors: [Color(0xFFFF9F74), Color(0xFFF27C54)],
-      angleDeg: -18,
-      size: Size(72, 30),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(0.4, 0),
-      colors: [Color(0xFFEFD35A), Color(0xFFF5E17E)],
-      angleDeg: 12,
-      size: Size(80, 32),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(-0.75, -0.05),
-      colors: [Color(0xFFB6E7EB), Color(0xFF7BD3DF)],
-      angleDeg: -38,
-      size: Size(70, 26),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(0.85, -0.05),
-      colors: [Color(0xFFECB0E2), Color(0xFFD176B8)],
-      angleDeg: 38,
-      size: Size(70, 28),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(-0.2, 0.25),
-      colors: [Color(0xFF9FE8F0), Color(0xFF6AC8D4)],
-      angleDeg: -10,
-      size: Size(64, 26),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(0.35, 0.35),
-      colors: [Color(0xFFB0E593), Color(0xFF7BC559)],
-      angleDeg: 14,
-      size: Size(64, 26),
-    ),
-  ];
+  final int writtenCount;
+
+  String get _assetPath {
+    final level = switch (writtenCount) {
+      0 => 1,
+      1 || 2 => 2,
+      3 || 4 || 5 => 3,
+      _ => 4,
+    };
+    return 'assets/svgs/tree_level_$level.svg';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -521,95 +493,22 @@ class _TreeIllustration extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 36),
       child: SizedBox(
         height: 320,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Positioned(
-              bottom: 12,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 60,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8BC68B),
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x22000000),
-                      blurRadius: 16,
-                      offset: Offset(0, 10),
-                    ),
-                  ],
-                ),
-              ),
+        child: Center(
+          child: _SvgAssetPicture(
+            assetPath: _assetPath,
+            width: 260,
+            height: 260,
+            semanticLabel: 'tree_level',
+            fallback: Icon(
+              Icons.park_rounded,
+              size: 120,
+              color: AppColors.leafGreen.withValues(alpha: 0.7),
             ),
-            Positioned(
-              bottom: 70,
-              child: Container(
-                width: 48,
-                height: 150,
-                decoration: BoxDecoration(
-                  color: AppColors.trunk,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x22000000),
-                      blurRadius: 18,
-                      offset: Offset(0, 12),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            for (final placement in _leafPlacements)
-              Align(
-                alignment: placement.alignment,
-                child: Transform.rotate(
-                  angle: placement.angleRad,
-                  child: Container(
-                    width: placement.size.width,
-                    height: placement.size.height,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: placement.colors,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        placement.size.height,
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x1F000000),
-                          blurRadius: 12,
-                          offset: Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
   }
-}
-
-class _LeafPlacement {
-  const _LeafPlacement({
-    required this.alignment,
-    required this.colors,
-    required this.angleDeg,
-    required this.size,
-  });
-
-  final Alignment alignment;
-  final List<Color> colors;
-  final double angleDeg;
-  final Size size;
-
-  double get angleRad => angleDeg * math.pi / 180;
 }
 
 class _FloatingWriteButton extends StatelessWidget {
@@ -920,7 +819,7 @@ class ViewDiaryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('M월 d일', 'ko').format(date);
-    final parsed = _splitContent(entry.content);
+    final parsed = splitDiaryContent(entry.content);
     return Dialog(
       backgroundColor: Colors.transparent,
       child: SingleChildScrollView(
@@ -954,15 +853,6 @@ class ViewDiaryDialog extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  _ModalContent _splitContent(String content) {
-    final segments = content.split('\n\n');
-    final title = segments.isNotEmpty ? segments.first.trim() : '';
-    final body = segments.length > 1
-        ? segments.sublist(1).join('\n\n').trim()
-        : '';
-    return _ModalContent(title: title, body: body);
   }
 }
 
@@ -1071,6 +961,15 @@ class _DiaryTextField extends StatelessWidget {
       ),
     );
   }
+}
+
+_ModalContent splitDiaryContent(String content) {
+  final segments = content.split('\n\n');
+  final title = segments.isNotEmpty ? segments.first.trim() : '';
+  final body = segments.length > 1
+      ? segments.sublist(1).join('\n\n').trim()
+      : '';
+  return _ModalContent(title: title, body: body);
 }
 
 class _ModalContent {
