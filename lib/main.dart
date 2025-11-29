@@ -5,6 +5,7 @@ import 'package:diary_garden/presentation/features/login/login_page.dart';
 import 'presentation/features/home/home_page.dart';
 import 'presentation/features/main/main_page.dart';
 import 'core/theme/app_colors.dart';
+import 'core/utils/tree_vector_util_test_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
