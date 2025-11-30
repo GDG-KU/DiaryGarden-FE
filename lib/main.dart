@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'package:diary_garden/presentation/features/login/login_page.dart';
@@ -9,6 +10,7 @@ import 'core/utils/tree_vector_util_test_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   await initializeDateFormatting('ko_KR');
   runApp(const MyApp());
 }
