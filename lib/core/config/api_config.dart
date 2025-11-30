@@ -3,7 +3,7 @@ class ApiConfig {
 
   static const String baseUrl = String.fromEnvironment(
     'DIARY_API_BASE_URL',
-    defaultValue: 'https://gardening-diary-258716291683.asia-northeast3.run.app:8080',
+    defaultValue: 'https://gardening-diary-258716291683.asia-northeast3.run.app',
   );
 
   static const String authToken = String.fromEnvironment('DIARY_API_TOKEN');

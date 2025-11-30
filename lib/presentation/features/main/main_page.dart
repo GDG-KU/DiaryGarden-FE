@@ -1,4 +1,5 @@
 import 'package:diary_garden/core/config/api_config.dart';
+import 'package:diary_garden/core/storage/token_storage.dart';
 import 'package:diary_garden/core/theme/app_colors.dart';
 import 'package:diary_garden/data/datasource/diary_api_client.dart';
 import 'package:diary_garden/data/models/diary_entry.dart';
@@ -22,14 +23,22 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   late final DiaryApiClient _diaryApiClient;
   late List<_DayStatusModel> _dayStatuses;
-  final String? _authToken = ApiConfig.maybeAuthToken;
+  String? _authToken;
 
   @override
   void initState() {
     super.initState();
     _diaryApiClient = DiaryApiClient();
     _dayStatuses = _generateWeekStatuses();
-    _loadRecentDiaries();
+    _loadAuthToken();
+  }
+
+  Future<void> _loadAuthToken() async {
+    final stored = await TokenStorage.readToken();
+    setState(() {
+      _authToken = stored ?? ApiConfig.maybeAuthToken;
+    });
+    await _loadRecentDiaries();
   }
 
   List<_DayStatusModel> _generateWeekStatuses() {
@@ -196,7 +205,9 @@ class _MainPageState extends State<MainPage> {
     );
   }
 
-  void _handleLogout() {
+  Future<void> _handleLogout() async {
+    await TokenStorage.clearToken();
+    if (!mounted) return;
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
@@ -243,7 +254,7 @@ class _MainScrollView extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 140),
+      padding: const EdgeInsets.only(bottom: 120),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -253,11 +264,11 @@ class _MainScrollView extends StatelessWidget {
             onCalendarTap: onCalendarTap,
             onProfileTap: onProfileTap,
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 48),
           const _DayHeaderRow(),
           const SizedBox(height: 10),
           _DayStatusRow(statuses: statuses, onTap: onDayTap),
-          const SizedBox(height: 40),
+          const SizedBox(height: 116),
           _TreeIllustration(writtenCount: statuses.where((s) => s.hasDiary).length),
         ],
       ),
