@@ -55,6 +55,12 @@ app.*.map.json
 /linux/build/
 /windows/build/
 /web/build/
+macos/Flutter/ephemeral/
+ios/Flutter/Flutter.podspec
+android/app/flutter_generated/
+
+# Flutter ephemeral build files
+**/Flutter/ephemeral/
 
 # Platform specific generated files
 /linux/flutter/

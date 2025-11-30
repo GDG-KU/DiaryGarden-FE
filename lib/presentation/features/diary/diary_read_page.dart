@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'data/local_diary_entries.dart';
-import 'models/diary_entry.dart';
-import 'theme/app_colors.dart';
-import 'utils/emotion_helper.dart';
+import '../../../data/datasource/local_diary_entries.dart';
+import '../../../data/models/diary_entry.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/emotion_helper.dart';
 
 class DiaryReadPage extends StatelessWidget {
   DiaryReadPage({super.key, List<DiaryEntry>? entries, this.onDelete})

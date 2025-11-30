@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-// [중요] AppColors가 정의된 파일을 import 해야 합니다.
-// 경로는 실제 프로젝트에 맞게 수정해주세요.
-// 예시: import 'package_name/theme/app_colors.dart';
-import 'theme/app_colors.dart';
+import '../../../core/theme/app_colors.dart';
 
 class DiaryWritePage extends StatefulWidget {
   const DiaryWritePage({super.key});
@@ -198,8 +195,9 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     // color: AppColors.textSecondary.withValues(alpha: 0.3),
-                    color:
-                        AppColors.textSecondary.withAlpha(77), // 0.3 * 255 = 77
+                    color: AppColors.textSecondary.withAlpha(
+                      77,
+                    ), // 0.3 * 255 = 77
                   ),
                 ),
                 child: Row(
@@ -247,24 +245,25 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
               minLines: 10,
               maxLines: 15,
               maxLength: 500,
-              buildCounter: (
-                context, {
-                required int currentLength,
-                required bool isFocused,
-                int? maxLength,
-              }) {
-                return SizedBox(
-                  width: double.infinity,
-                  child: Text(
-                    '$currentLength자',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                  ),
-                );
-              },
+              buildCounter:
+                  (
+                    context, {
+                    required int currentLength,
+                    required bool isFocused,
+                    int? maxLength,
+                  }) {
+                    return SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        '$currentLength자',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    );
+                  },
             ),
             const SizedBox(height: 24),
             _buildTipBox(),
@@ -278,8 +277,9 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
                       foregroundColor: AppColors.textSecondary,
                       side: BorderSide(
                         // color: AppColors.textSecondary.withValues(alpha: 0.5),
-                        color: AppColors.textSecondary
-                            .withAlpha(128), // 0.5 * 255 = 128
+                        color: AppColors.textSecondary.withAlpha(
+                          128,
+                        ), // 0.5 * 255 = 128
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
@@ -343,7 +343,8 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
         borderRadius: BorderRadius.circular(12),
         // border: Border.all(color: AppColors.leafGreen.withValues(alpha: 0.4)),
         border: Border.all(
-            color: AppColors.leafGreen.withAlpha(102)), // 0.4 * 255 = 102
+          color: AppColors.leafGreen.withAlpha(102),
+        ), // 0.4 * 255 = 102
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,8 +354,9 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
               Icon(
                 Icons.lightbulb_outline,
                 // color: AppColors.textSecondary.withValues(alpha: 0.8),
-                color:
-                    AppColors.textSecondary.withAlpha(204), // 0.8 * 255 = 204
+                color: AppColors.textSecondary.withAlpha(
+                  204,
+                ), // 0.8 * 255 = 204
               ),
               const SizedBox(width: 8),
               const Text(
