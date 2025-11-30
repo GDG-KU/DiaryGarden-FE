@@ -64,3 +64,6 @@ app.*.map.json
 /windows/flutter/
 /macos/Flutter/ephemeral/
 /ios/Flutter/ephemeral/
+
+#env
+.env
