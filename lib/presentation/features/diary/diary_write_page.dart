@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../data/datasource/diary_api_client.dart';
+import '../../../data/models/remote_diary_entry.dart';
 import '../../../core/theme/app_colors.dart';
 
 class DiaryWritePage extends StatefulWidget {
-  const DiaryWritePage({super.key});
+  const DiaryWritePage({super.key, this.onSubmit});
+
+  final Future<RemoteDiaryEntry> Function(
+    DateTime date,
+    String title,
+    String content,
+  )? onSubmit;
 
   @override
   State<DiaryWritePage> createState() => _DiaryWritePageState();
@@ -14,6 +22,7 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _contentController = TextEditingController();
   DateTime _selectedDate = DateTime.now();
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -35,6 +44,7 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
   }
 
   Future<void> _pickDate() async {
+    if (_isSaving) return;
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
@@ -63,7 +73,8 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
     }
   }
 
-  void _handleSave() {
+  Future<void> _handleSave() async {
+    if (_isSaving) return;
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
 
@@ -77,25 +88,38 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('일기가 저장되었습니다! 🌱'),
-        backgroundColor: AppColors.leafGreen,
-        duration: Duration(milliseconds: 1500),
-      ),
-    );
-
-    _titleController.clear();
-    _contentController.clear();
     setState(() {
-      _selectedDate = DateTime.now();
+      _isSaving = true;
     });
 
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        Navigator.of(context).pop();
+    try {
+      if (widget.onSubmit != null) {
+        await widget.onSubmit!.call(_selectedDate, title, content);
       }
-    });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('일기가 저장되었습니다! 🌱'),
+          backgroundColor: AppColors.leafGreen,
+          duration: Duration(milliseconds: 1500),
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+      });
+      final message = error is DiaryApiException
+          ? error.message
+          : '저장에 실패했습니다. 다시 시도해주세요.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: AppColors.leafCoral,
+        ),
+      );
+    }
   }
 
   @override
@@ -162,6 +186,7 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
             const SizedBox(height: 8),
             TextFormField(
               controller: _titleController,
+              enabled: !_isSaving,
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 16,
@@ -173,6 +198,7 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
             const SizedBox(height: 8),
             TextFormField(
               controller: _contentController,
+              enabled: !_isSaving,
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 16,
@@ -211,7 +237,7 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.textSecondary,
                       side: BorderSide(
@@ -233,9 +259,18 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton.icon(
-                    onPressed: _handleSave,
-                    icon: const Icon(Icons.save_alt_outlined, size: 20),
-                    label: const Text('저장하기'),
+                    onPressed: _isSaving ? null : _handleSave,
+                    icon: _isSaving
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.textOnTrunk,
+                            ),
+                          )
+                        : const Icon(Icons.save_alt_outlined, size: 20),
+                    label: Text(_isSaving ? '저장 중...' : '저장하기'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.trunk,
                       foregroundColor: AppColors.textOnTrunk,

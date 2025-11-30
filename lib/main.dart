@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
-import 'package:diary_garden/presentation/features/home/home_page.dart';
 import 'package:diary_garden/presentation/features/login/login_page.dart';
+import 'presentation/features/home/home_page.dart';
+import 'presentation/features/main/main_page.dart';
 import 'core/theme/app_colors.dart';
 import 'core/utils/tree_vector_util_test_page.dart';
 
@@ -20,6 +21,7 @@ class MyApp extends StatelessWidget {
     final baseTextTheme = ThemeData.light().textTheme.apply(
       bodyColor: AppColors.textPrimary,
       displayColor: AppColors.textPrimary,
+      fontFamily: 'ShadowsIntoLightTwo',
     );
 
     final colorScheme =
@@ -41,16 +43,24 @@ class MyApp extends StatelessWidget {
           onSecondaryContainer: AppColors.textOnLeaf,
         );
 
+    final theme = ThemeData(
+      colorScheme: colorScheme,
+      textTheme: baseTextTheme,
+      scaffoldBackgroundColor: AppColors.background,
+      fontFamily: 'ShadowsIntoLightTwo',
+      useMaterial3: true,
+    );
+
     return MaterialApp(
       routes: {
-        '/login': (context) => LoginPage(),
-        '/home': (context) => HomePage(),
-        '/test': (context) => const TreeVectorUtilTestPage(),
+        '/login': (context) => const LoginPage(),
+        '/home': (context) => const HomePage(),
+        '/main': (context) => const MainPage(),
       },
       debugShowCheckedModeBanner: false,
       title: 'Dairy Garden',
-      theme: ThemeData(primarySwatch: Colors.green),
-      home: const TreeVectorUtilTestPage(), // 🧪 Testing TreeVectorUtil
+      theme: theme,
+      home: const LoginPage(), // ✅ 처음 실행할 때 보여줄 페이지
     );
   }
 }

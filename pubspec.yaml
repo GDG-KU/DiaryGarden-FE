@@ -36,15 +36,31 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_svg: ^2.2.2
   intl: ^0.20.2
+  http: ^1.2.1
+  shared_preferences: ^2.2.3
 
 flutter:
   uses-material-design: true
 
   assets:
+    - assets/images/flower_tree.jpg
+    - assets/images/bubble_tree.jpg
+    - assets/images/Menu.svg
+    - assets/images/Profile.png
+    - assets/images/calendar.svg
+    - assets/images/WriteButton.png
+    - assets/images/writtenDay.png
+    - assets/images/unWrittenDay.png
+
     - assets/
     - assets/svgs/
     - assets/images/
     - assets/fonts/
+
+  fonts:
+    - family: ShadowsIntoLightTwo
+      fonts:
+        - asset: assets/fonts/ShadowsIntoLightTwo-Regular.ttf
 
 dev_dependencies:
   flutter_test:

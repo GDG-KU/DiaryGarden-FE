@@ -69,17 +69,16 @@ void main() {
   }
 
   group('MainPage', () {
-    testWidgets('shows frosted status bar and snackbar on action', (
-      tester,
-    ) async {
+    testWidgets('opens write modal when action button tapped', (tester) async {
       await tester.pumpWidget(_buildApp(const MainPage()));
 
-      expect(find.text('9:41'), findsOneWidget);
+      expect(find.bySemanticsLabel('write_button'), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.edit));
-      await tester.pump(); // show snackbar
+      await tester.tap(find.bySemanticsLabel('write_button'));
+      await tester.pumpAndSettle();
 
-      expect(find.text('오늘의 일기를 써 볼까요?'), findsOneWidget);
+      expect(find.text('제목'), findsOneWidget);
+      expect(find.text('본문'), findsOneWidget);
     });
   });
 
@@ -104,16 +103,12 @@ void main() {
   });
 
   group('Home and Garden flow', () {
-    testWidgets('navigates to garden main page', (tester) async {
+    testWidgets('home route shows garden summary directly', (tester) async {
       await tester.pumpWidget(
         _buildApp(const HomePage(), bundle: _svgBundle()),
       );
 
-      expect(find.text('나의 숲(정원)'), findsOneWidget);
-
-      await tester.tap(find.text('나의 숲(정원)'));
-      await tester.pumpAndSettle();
-
+      expect(find.text('나의 숲'), findsOneWidget);
       expect(find.text('최고 기록: 00일'), findsOneWidget);
       expect(find.text('누적 나무 수: 00그루'), findsOneWidget);
     });

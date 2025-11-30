@@ -1,11 +1,215 @@
-import 'dart:math' as math;
-
+import 'package:diary_garden/core/config/api_config.dart';
+import 'package:diary_garden/core/storage/token_storage.dart';
 import 'package:diary_garden/core/theme/app_colors.dart';
+import 'package:diary_garden/data/datasource/diary_api_client.dart';
+import 'package:diary_garden/data/models/diary_entry.dart';
+import 'package:diary_garden/data/models/remote_diary_entry.dart';
+import 'package:diary_garden/presentation/features/diary/diary_read_page.dart';
+import 'package:diary_garden/presentation/features/diary/diary_write_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:intl/intl.dart';
 
-class MainPage extends StatelessWidget {
+const _weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+class MainPage extends StatefulWidget {
   const MainPage({super.key});
+
+  @override
+  State<MainPage> createState() => _MainPageState();
+}
+
+class _MainPageState extends State<MainPage> {
+  late final DiaryApiClient _diaryApiClient;
+  late List<_DayStatusModel> _dayStatuses;
+  String? _authToken;
+
+  @override
+  void initState() {
+    super.initState();
+    _diaryApiClient = DiaryApiClient();
+    _dayStatuses = _generateWeekStatuses();
+    _loadAuthToken();
+  }
+
+  Future<void> _loadAuthToken() async {
+    final stored = await TokenStorage.readToken();
+    setState(() {
+      _authToken = stored ?? ApiConfig.maybeAuthToken;
+    });
+    await _loadRecentDiaries();
+  }
+
+  List<_DayStatusModel> _generateWeekStatuses() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final start = today.subtract(Duration(days: today.weekday % 7));
+    return List.generate(_weekdayLabels.length, (index) {
+      final date = start.add(Duration(days: index));
+      final treeId = _treeIdForDate(date);
+      return _DayStatusModel(label: _weekdayLabels[index], date: date, treeId: treeId);
+    });
+  }
+
+  Future<void> _loadRecentDiaries() async {
+    final token = _authToken;
+    if (token == null) return;
+    try {
+      final diaries = await _diaryApiClient.fetchDiaries(authToken: token, limit: 7);
+      if (!mounted) return;
+      setState(() {
+        _dayStatuses = _dayStatuses.map((status) {
+          final match = _findDiaryForDate(diaries, status.date);
+          if (match == null) {
+            return status;
+          }
+          return status.copyWith(diaryId: match.id);
+        }).toList();
+      });
+    } catch (error) {
+      debugPrint('Failed to load diaries: $error');
+    }
+  }
+
+  RemoteDiaryEntry? _findDiaryForDate(
+    List<RemoteDiaryEntry> diaries,
+    DateTime date,
+  ) {
+    for (final entry in diaries) {
+      if (DateUtils.isSameDay(entry.writtenDate, date)) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  String _treeIdForDate(DateTime date) => 'tree-${DateFormat('yyyyMMdd').format(date)}';
+
+  Future<void> _openWritePage() async {
+    final bool? saved = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => DiaryWritePage(
+          onSubmit: (date, title, body) => _submitDiary(date, title, body),
+        ),
+      ),
+    );
+    if (saved == true) {
+      await _loadRecentDiaries();
+    }
+  }
+
+  Future<RemoteDiaryEntry> _submitDiary(
+    DateTime date,
+    String title,
+    String body,
+  ) async {
+    final token = _authToken;
+    if (token == null) {
+      throw const DiaryApiException('API 토큰이 설정되어 있지 않습니다.');
+    }
+    final entry = await _diaryApiClient.createDiary(
+      authToken: token,
+      treeId: _treeIdForDate(date),
+      content: _composeContent(title, body),
+    );
+
+    if (mounted) {
+      setState(() {
+        _dayStatuses = _dayStatuses.map((status) {
+          if (DateUtils.isSameDay(status.date, date)) {
+            return status.copyWith(diaryId: entry.id);
+          }
+          return status;
+        }).toList();
+      });
+    }
+    return entry;
+  }
+
+  Future<void> _handleDayTap(_DayStatusModel status) async {
+    if (!status.hasDiary || status.diaryId == null) {
+      _showSnackBar('아직 작성된 일기가 없어요.');
+      return;
+    }
+    final token = _authToken;
+    if (token == null) {
+      _showSnackBar('API 토큰이 필요합니다.');
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _LoadingDialog(),
+    );
+
+    try {
+      final entry = await _diaryApiClient.fetchDiary(id: status.diaryId!, authToken: token);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      final diaryEntry = _toDiaryEntry(entry);
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DiaryReadPage(entries: [diaryEntry]),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _showSnackBar('일기를 불러오지 못했습니다.');
+      }
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _composeContent(String title, String body) {
+    final trimmedTitle = title.trim();
+    final trimmedBody = body.trim();
+    if (trimmedBody.isEmpty) return trimmedTitle;
+    if (trimmedTitle.isEmpty) return trimmedBody;
+    return '$trimmedTitle\n\n$trimmedBody';
+  }
+
+  DiaryEntry _toDiaryEntry(RemoteDiaryEntry entry) {
+    final parsed = splitDiaryContent(entry.content);
+    return DiaryEntry(
+      id: entry.id,
+      title: parsed.title.isEmpty ? '오늘 하루' : parsed.title,
+      content: parsed.body.isEmpty ? parsed.title : parsed.body,
+      date: entry.writtenDate,
+      emotionScores: const {'default': 1.0},
+      dominantEmotion: 'default',
+    );
+  }
+
+  void _openCalendar() {
+    Navigator.of(context).pushNamed('/home');
+  }
+
+  void _handleMenuTap() {
+    _showSnackBar('메뉴 화면은 준비 중입니다.');
+  }
+
+  void _handleProfileTap() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => ProfileDialog(
+        onLogout: _handleLogout,
+      ),
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    await TokenStorage.clearToken();
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,9 +217,17 @@ class MainPage extends StatelessWidget {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Stack(
-          children: const [
-            Positioned.fill(child: _MainScrollView()),
-            _FloatingWriteButton(),
+          children: [
+            Positioned.fill(
+              child: _MainScrollView(
+                statuses: _dayStatuses,
+                onDayTap: _handleDayTap,
+                onMenuTap: _handleMenuTap,
+                onCalendarTap: _openCalendar,
+                onProfileTap: _handleProfileTap,
+              ),
+            ),
+            _FloatingWriteButton(onPressed: _openWritePage),
           ],
         ),
       ),
@@ -24,146 +236,79 @@ class MainPage extends StatelessWidget {
 }
 
 class _MainScrollView extends StatelessWidget {
-  const _MainScrollView();
+  const _MainScrollView({
+    required this.statuses,
+    required this.onDayTap,
+    required this.onMenuTap,
+    required this.onCalendarTap,
+    required this.onProfileTap,
+  });
+
+  final List<_DayStatusModel> statuses;
+  final ValueChanged<_DayStatusModel> onDayTap;
+  final VoidCallback onMenuTap;
+  final VoidCallback onCalendarTap;
+  final VoidCallback onProfileTap;
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 140),
+      padding: const EdgeInsets.only(bottom: 120),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: const [
-          _FrostedStatusBar(),
-          SizedBox(height: 24),
-          _TopActionsRow(),
-          SizedBox(height: 32),
-          _DayHeaderRow(),
-          SizedBox(height: 10),
-          _DayStatusRow(),
-          SizedBox(height: 40),
-          _TreeIllustration(),
-        ],
-      ),
-    );
-  }
-}
-
-class _FrostedStatusBar extends StatelessWidget {
-  const _FrostedStatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    final borderColor = Colors.black.withValues(alpha: 0.06);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Container(
-        height: 58,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.82),
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(44),
-            topRight: Radius.circular(44),
+        children: [
+          const SizedBox(height: 24),
+          _TopActionsRow(
+            onMenuTap: onMenuTap,
+            onCalendarTap: onCalendarTap,
+            onProfileTap: onProfileTap,
           ),
-          border: Border.all(color: borderColor),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x14000000),
-              blurRadius: 14,
-              offset: Offset(0, 8),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          children: [
-            const Text(
-              '9:41',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 18,
-                color: Colors.black,
-              ),
-            ),
-            const Spacer(),
-            Icon(
-              Icons.signal_cellular_alt_rounded,
-              color: Colors.black.withValues(alpha: 0.8),
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Icon(
-              Icons.wifi,
-              color: Colors.black.withValues(alpha: 0.8),
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Container(
-              width: 26,
-              height: 12,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: Colors.black, width: 1.5),
-              ),
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 2),
-              child: Container(
-                width: 16,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          ],
-        ),
+          const SizedBox(height: 48),
+          const _DayHeaderRow(),
+          const SizedBox(height: 10),
+          _DayStatusRow(statuses: statuses, onTap: onDayTap),
+          const SizedBox(height: 116),
+          _TreeIllustration(writtenCount: statuses.where((s) => s.hasDiary).length),
+        ],
       ),
     );
   }
 }
 
 class _TopActionsRow extends StatelessWidget {
-  const _TopActionsRow();
+  const _TopActionsRow({
+    required this.onMenuTap,
+    required this.onCalendarTap,
+    required this.onProfileTap,
+  });
+
+  final VoidCallback onMenuTap;
+  final VoidCallback onCalendarTap;
+  final VoidCallback onProfileTap;
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = Colors.black.withValues(alpha: 0.1);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: [
-          _IconBadge(
-            borderColor: borderColor,
-            child: SvgPicture.asset(
-              'assets/images/Menu.svg',
-              width: 20,
-              height: 20,
-            ),
+          _TopIconButton(
+            assetPath: 'assets/images/Menu.svg',
+            semanticLabel: 'menu_button',
+            onTap: onMenuTap,
           ),
           const Spacer(),
-          _IconBadge(
-            borderColor: borderColor,
-            child: SvgPicture.asset(
-              'assets/images/calendar.svg',
-              width: 20,
-              height: 20,
-            ),
+          _TopIconButton(
+            assetPath: 'assets/images/calendar.svg',
+            semanticLabel: 'calendar_button',
+            onTap: onCalendarTap,
           ),
           const SizedBox(width: 12),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              border: Border.all(color: borderColor),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: ClipOval(
-              child: SvgPicture.asset(
-                'assets/images/Profile.svg',
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-              ),
-            ),
+          _TopIconButton(
+            assetPath: 'assets/images/Profile.png',
+            semanticLabel: 'profile_button',
+            onTap: onProfileTap,
           ),
         ],
       ),
@@ -171,30 +316,46 @@ class _TopActionsRow extends StatelessWidget {
   }
 }
 
-class _IconBadge extends StatelessWidget {
-  const _IconBadge({required this.child, required this.borderColor});
+class _TopIconButton extends StatelessWidget {
+  const _TopIconButton({
+    required this.assetPath,
+    this.semanticLabel,
+    this.onTap,
+  });
 
-  final Widget child;
-  final Color borderColor;
+  final String assetPath;
+  final String? semanticLabel;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: borderColor),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 10,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Center(child: child),
+    final ext = assetPath.toLowerCase().split('.').last;
+    final imageWidget = ext == 'svg'
+        ? _SvgAssetPicture(
+            assetPath: assetPath,
+            width: 28,
+            height: 28,
+            semanticLabel: semanticLabel,
+            fallback: Icon(Icons.image_outlined, color: Colors.black54, size: 24),
+          )
+        : Image.asset(
+            assetPath,
+            width: 28,
+            height: 28,
+            fit: BoxFit.contain,
+          );
+
+    Widget child = SizedBox(width: 48, height: 48, child: Center(child: imageWidget));
+    child = Semantics(label: semanticLabel, button: onTap != null, child: child);
+
+    if (onTap == null) {
+      return child;
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      child: child,
+      onTap: onTap,
     );
   }
 }
@@ -202,24 +363,22 @@ class _IconBadge extends StatelessWidget {
 class _DayHeaderRow extends StatelessWidget {
   const _DayHeaderRow();
 
-  static const _labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-
   @override
   Widget build(BuildContext context) {
-    final textColor = Colors.black.withValues(alpha: 0.65);
+    final textColor = Colors.black.withValues(alpha: 0.75);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          for (final label in _labels)
+          for (final label in _weekdayLabels)
             Text(
               label,
               style: TextStyle(
-                fontSize: 13,
-                letterSpacing: 1.4,
+                fontSize: 12,
+                letterSpacing: 2,
                 color: textColor,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
               ),
             ),
         ],
@@ -229,9 +388,10 @@ class _DayHeaderRow extends StatelessWidget {
 }
 
 class _DayStatusRow extends StatelessWidget {
-  const _DayStatusRow();
+  const _DayStatusRow({required this.statuses, required this.onTap});
 
-  static const _status = [true, false, true, true, true, true, true];
+  final List<_DayStatusModel> statuses;
+  final ValueChanged<_DayStatusModel> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -239,110 +399,104 @@ class _DayStatusRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [for (final written in _status) _DayBubble(written: written)],
+        children: [
+          for (final status in statuses)
+            _DayBubble(
+              status: status,
+              onTap: () => onTap(status),
+            ),
+        ],
       ),
     );
   }
 }
 
 class _DayBubble extends StatelessWidget {
-  const _DayBubble({required this.written});
+  const _DayBubble({required this.status, required this.onTap});
 
-  final bool written;
+  final _DayStatusModel status;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = Colors.black.withValues(alpha: 0.08);
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        gradient: written
-            ? const LinearGradient(
-                colors: [Color(0xFFFFF6D8), Color(0xFFFACF8F)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              )
-            : null,
-        color: written ? null : Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: written ? null : Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+    final assetPath = status.hasDiary
+        ? 'assets/images/writtenDay.png'
+        : 'assets/images/unWrittenDay.png';
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Semantics(
+        label: status.hasDiary
+            ? 'written_day_${status.label}'
+            : 'unwritten_day_${status.label}',
+        button: true,
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Image.asset(
+            assetPath,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stack) => Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: status.hasDiary ? AppColors.leafGreen : Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.black12),
+              ),
+              child: Icon(
+                status.hasDiary ? Icons.eco : Icons.add,
+                color: status.hasDiary ? Colors.white : Colors.black38,
+                size: 20,
+              ),
+            ),
           ),
-        ],
-      ),
-      child: Icon(
-        written ? Icons.eco : Icons.add,
-        color: written ? const Color(0xFF5A6E2C) : Colors.black26,
-        size: 20,
+        ),
       ),
     );
   }
 }
 
-class _TreeIllustration extends StatelessWidget {
-  const _TreeIllustration();
+class _DayStatusModel {
+  const _DayStatusModel({
+    required this.label,
+    required this.date,
+    required this.treeId,
+    this.diaryId,
+  });
 
-  static const _leafPlacements = [
-    _LeafPlacement(
-      alignment: Alignment(0, -0.95),
-      colors: [Color(0xFFFFE08E), Color(0xFFF5C565)],
-      angleDeg: 8,
-      size: Size(120, 48),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(-0.65, -0.55),
-      colors: [Color(0xFFAEE1C5), Color(0xFF87C6A4)],
-      angleDeg: -24,
-      size: Size(84, 34),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(0.7, -0.4),
-      colors: [Color(0xFF9FC0F5), Color(0xFF88A8EA)],
-      angleDeg: 24,
-      size: Size(78, 32),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(-0.3, -0.15),
-      colors: [Color(0xFFFF9F74), Color(0xFFF27C54)],
-      angleDeg: -18,
-      size: Size(72, 30),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(0.4, 0),
-      colors: [Color(0xFFEFD35A), Color(0xFFF5E17E)],
-      angleDeg: 12,
-      size: Size(80, 32),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(-0.75, -0.05),
-      colors: [Color(0xFFB6E7EB), Color(0xFF7BD3DF)],
-      angleDeg: -38,
-      size: Size(70, 26),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(0.85, -0.05),
-      colors: [Color(0xFFECB0E2), Color(0xFFD176B8)],
-      angleDeg: 38,
-      size: Size(70, 28),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(-0.2, 0.25),
-      colors: [Color(0xFF9FE8F0), Color(0xFF6AC8D4)],
-      angleDeg: -10,
-      size: Size(64, 26),
-    ),
-    _LeafPlacement(
-      alignment: Alignment(0.35, 0.35),
-      colors: [Color(0xFFB0E593), Color(0xFF7BC559)],
-      angleDeg: 14,
-      size: Size(64, 26),
-    ),
-  ];
+  final String label;
+  final DateTime date;
+  final String treeId;
+  final String? diaryId;
+
+  bool get hasDiary => diaryId != null;
+
+  _DayStatusModel copyWith({String? diaryId}) {
+    return _DayStatusModel(
+      label: label,
+      date: date,
+      treeId: treeId,
+      diaryId: diaryId ?? this.diaryId,
+    );
+  }
+}
+
+class _TreeIllustration extends StatelessWidget {
+  const _TreeIllustration({required this.writtenCount});
+
+  final int writtenCount;
+
+  String get _assetPath {
+    final level = switch (writtenCount) {
+      0 => 1,
+      1 || 2 => 2,
+      3 || 4 || 5 => 3,
+      _ => 4,
+    };
+    return 'assets/svgs/tree_level_$level.svg';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -350,99 +504,28 @@ class _TreeIllustration extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 36),
       child: SizedBox(
         height: 320,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Positioned(
-              bottom: 12,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 60,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF8BC68B),
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x22000000),
-                      blurRadius: 16,
-                      offset: Offset(0, 10),
-                    ),
-                  ],
-                ),
-              ),
+        child: Center(
+          child: _SvgAssetPicture(
+            assetPath: _assetPath,
+            width: 260,
+            height: 260,
+            semanticLabel: 'tree_level',
+            fallback: Icon(
+              Icons.park_rounded,
+              size: 120,
+              color: AppColors.leafGreen.withValues(alpha: 0.7),
             ),
-            Positioned(
-              bottom: 70,
-              child: Container(
-                width: 48,
-                height: 150,
-                decoration: BoxDecoration(
-                  color: AppColors.trunk,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x22000000),
-                      blurRadius: 18,
-                      offset: Offset(0, 12),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            for (final placement in _leafPlacements)
-              Align(
-                alignment: placement.alignment,
-                child: Transform.rotate(
-                  angle: placement.angleRad,
-                  child: Container(
-                    width: placement.size.width,
-                    height: placement.size.height,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: placement.colors,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        placement.size.height,
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x1F000000),
-                          blurRadius: 12,
-                          offset: Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _LeafPlacement {
-  const _LeafPlacement({
-    required this.alignment,
-    required this.colors,
-    required this.angleDeg,
-    required this.size,
-  });
-
-  final Alignment alignment;
-  final List<Color> colors;
-  final double angleDeg;
-  final Size size;
-
-  double get angleRad => angleDeg * math.pi / 180;
-}
-
 class _FloatingWriteButton extends StatelessWidget {
-  const _FloatingWriteButton();
+  const _FloatingWriteButton({required this.onPressed});
+
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -452,37 +535,525 @@ class _FloatingWriteButton extends StatelessWidget {
       right: 0,
       child: Center(
         child: GestureDetector(
-          onTap: () {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('오늘의 일기를 써 볼까요?'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          },
-          child: Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFFFFD071), Color(0xFFFF9A56)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x33000000),
-                  blurRadius: 20,
-                  offset: Offset(0, 10),
+          onTap: onPressed,
+          child: Semantics(
+            label: 'write_button',
+            button: true,
+            child: Image.asset(
+              'assets/images/WriteButton.png',
+              width: 88,
+              height: 88,
+              errorBuilder: (context, error, stack) => Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  border: Border.all(color: Colors.black87, width: 1.2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 18,
+                      offset: Offset(0, 10),
+                    ),
+                  ],
                 ),
-              ],
+                child: const Icon(Icons.edit, color: Colors.black87, size: 32),
+              ),
             ),
-            child: const Icon(Icons.edit, color: Colors.white, size: 36),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LoadingDialog extends StatelessWidget {
+  const _LoadingDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 120),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('불러오는 중...'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ProfileDialog extends StatelessWidget {
+  const ProfileDialog({required this.onLogout, super.key});
+
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 280,
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(44),
+          border: Border.all(color: Colors.black.withOpacity(0.1), width: 2),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 16,
+              offset: Offset(4, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                tooltip: '닫기',
+                splashRadius: 18,
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded, size: 20),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(120),
+                color: Colors.white,
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x26000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/Profile.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stack) => Icon(
+                    Icons.person,
+                    color: Colors.grey.shade600,
+                    size: 64,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              '나의 일기장',
+              style: TextStyle(fontSize: 24, color: Colors.black),
+            ),
+            const SizedBox(height: 16),
+            Divider(color: Colors.black.withOpacity(0.1)),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.logout, color: Colors.black87),
+                label: const Text(
+                  '로그아웃',
+                  style: TextStyle(fontSize: 18, color: Colors.black87),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black87,
+                  shadowColor: const Color(0x33000000),
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  onLogout();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class WriteDiaryDialog extends StatefulWidget {
+  const WriteDiaryDialog({
+    required this.date,
+    required this.onSubmit,
+    super.key,
+  });
+
+  final DateTime date;
+  final Future<RemoteDiaryEntry> Function(String title, String content) onSubmit;
+
+  @override
+  State<WriteDiaryDialog> createState() => _WriteDiaryDialogState();
+}
+
+class _WriteDiaryDialogState extends State<WriteDiaryDialog> {
+  final _titleController = TextEditingController();
+  final _bodyController = TextEditingController();
+  bool _isSaving = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _bodyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleSave() async {
+    final title = _titleController.text.trim();
+    final body = _bodyController.text.trim();
+    if (title.isEmpty && body.isEmpty) {
+      setState(() => _errorMessage = '제목 또는 본문을 입력해주세요.');
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+
+    try {
+      await widget.onSubmit(title, body);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isSaving = false;
+        _errorMessage =
+            error is DiaryApiException ? error.message : '저장에 실패했습니다.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dateLabel = DateFormat('M월 d일', 'ko').format(widget.date);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: SingleChildScrollView(
+        child: _DiaryModalCard(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DiaryModalHeader(title: dateLabel),
+            const SizedBox(height: 24),
+            _DiaryFieldLabel('제목'),
+            const SizedBox(height: 8),
+            _DiaryTextField(
+              controller: _titleController,
+              hintText: '제목을 입력하세요',
+              textInputAction: TextInputAction.next,
+              enabled: !_isSaving,
+            ),
+            const SizedBox(height: 16),
+            _DiaryFieldLabel('본문'),
+            const SizedBox(height: 8),
+            _DiaryTextField(
+              controller: _bodyController,
+              hintText: '오늘 하루는 어땠나요?'
+                  '\n느낀 점을 자유롭게 적어 보세요.',
+              maxLines: 8,
+              enabled: !_isSaving,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black87,
+                  shadowColor: const Color(0x40000000),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 4,
+                ),
+                onPressed: _isSaving ? null : _handleSave,
+                child: _isSaving
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('저장하기'),
+              ),
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+              ),
+            ],
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+}
+
+class ViewDiaryDialog extends StatelessWidget {
+  const ViewDiaryDialog({
+    required this.date,
+    required this.entry,
+    super.key,
+  });
+
+  final DateTime date;
+  final RemoteDiaryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final dateLabel = DateFormat('M월 d일', 'ko').format(date);
+    final parsed = splitDiaryContent(entry.content);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: SingleChildScrollView(
+        child: _DiaryModalCard(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DiaryModalHeader(title: dateLabel),
+            const SizedBox(height: 24),
+            Text(
+              parsed.title.isEmpty ? '오늘 하루' : parsed.title,
+              style: const TextStyle(fontSize: 20),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.black.withOpacity(0.1)),
+              ),
+              child: Text(
+                parsed.body.isEmpty ? parsed.title : parsed.body,
+                style: const TextStyle(fontSize: 14, height: 1.5),
+              ),
+            ),
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DiaryModalCard extends StatelessWidget {
+  const _DiaryModalCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 16,
+            offset: Offset(4, 8),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
+class _DiaryModalHeader extends StatelessWidget {
+  const _DiaryModalHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 24),
+        ),
+        IconButton(
+          splashRadius: 20,
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.close_rounded, size: 24),
+        ),
+      ],
+    );
+  }
+}
+
+class _DiaryFieldLabel extends StatelessWidget {
+  const _DiaryFieldLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(fontSize: 16),
+    );
+  }
+}
+
+class _DiaryTextField extends StatelessWidget {
+  const _DiaryTextField({
+    required this.controller,
+    required this.hintText,
+    this.maxLines = 1,
+    this.textInputAction,
+    this.enabled = true,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final int maxLines;
+  final TextInputAction? textInputAction;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      maxLines: maxLines,
+      textInputAction: textInputAction,
+      decoration: InputDecoration(
+        hintText: hintText,
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.5),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.black.withOpacity(0.1)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.black.withOpacity(0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.black.withOpacity(0.2)),
+        ),
+      ),
+    );
+  }
+}
+
+_ModalContent splitDiaryContent(String content) {
+  final segments = content.split('\n\n');
+  final title = segments.isNotEmpty ? segments.first.trim() : '';
+  final body = segments.length > 1
+      ? segments.sublist(1).join('\n\n').trim()
+      : '';
+  return _ModalContent(title: title, body: body);
+}
+
+class _ModalContent {
+  const _ModalContent({required this.title, required this.body});
+
+  final String title;
+  final String body;
+}
+
+class _SvgAssetPicture extends StatefulWidget {
+  const _SvgAssetPicture({
+    required this.assetPath,
+    this.width,
+    this.height,
+    this.fit = BoxFit.contain,
+    this.semanticLabel,
+    this.fallback,
+  });
+
+  final String assetPath;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  final String? semanticLabel;
+  final Widget? fallback;
+
+  @override
+  State<_SvgAssetPicture> createState() => _SvgAssetPictureState();
+}
+
+class _SvgAssetPictureState extends State<_SvgAssetPicture> {
+  bool _isAvailable = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _verifyAsset();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SvgAssetPicture oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.assetPath != widget.assetPath) {
+      _isAvailable = true;
+      _verifyAsset();
+    }
+  }
+
+  Future<void> _verifyAsset() async {
+    try {
+      await rootBundle.load(widget.assetPath);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isAvailable = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isAvailable) {
+      return SvgPicture.asset(
+        widget.assetPath,
+        width: widget.width,
+        height: widget.height,
+        fit: widget.fit,
+        semanticsLabel: widget.semanticLabel,
+      );
+    }
+    return widget.fallback ?? Icon(
+      Icons.image_not_supported_outlined,
+      size: widget.width ?? widget.height ?? 24,
+      color: Colors.black54,
     );
   }
 }
