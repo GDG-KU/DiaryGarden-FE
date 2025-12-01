@@ -23,16 +23,18 @@ class DiaryApiClient {
 
   Future<RemoteDiaryEntry> createDiary({
     required String authToken,
-    required String treeId,
+    required String title,
     required String content,
+    required DateTime writtenDate,
   }) async {
     final uri = Uri.parse('$_baseUrl/api/diaries');
     final response = await _httpClient.post(
       uri,
       headers: _headers(token: authToken),
       body: jsonEncode({
-        'treeId': treeId,
+        'title': title,
         'content': content,
+        'writtenDate': writtenDate.toIso8601String(),
       }),
     );
     return _parseDiary(response);
@@ -43,10 +45,9 @@ class DiaryApiClient {
     String? authToken,
   }) async {
     final uri = Uri.parse('$_baseUrl/api/diaries/$id');
-    final response = await _httpClient.get(
-      uri,
-      headers: _headers(token: authToken),
-    );
+    final response = await _httpClient
+        .get(uri, headers: _headers(token: authToken))
+        .timeout(const Duration(seconds: 15));
     return _parseDiary(response);
   }
 
@@ -54,6 +55,7 @@ class DiaryApiClient {
     required String authToken,
     int limit = 0,
     String? lastDocId,
+    DateTime? updatedAfter,
   }) async {
     final query = <String, String>{};
     if (limit > 0) {
@@ -62,10 +64,13 @@ class DiaryApiClient {
     if (lastDocId != null && lastDocId.isNotEmpty) {
       query['lastDocId'] = lastDocId;
     }
+    if (updatedAfter != null) {
+      query['updatedAfter'] = updatedAfter.toUtc().toIso8601String();
+    }
 
-    final uri = Uri.parse('$_baseUrl/api/diaries').replace(
-      queryParameters: query.isEmpty ? null : query,
-    );
+    final uri = Uri.parse(
+      '$_baseUrl/api/diaries',
+    ).replace(queryParameters: query.isEmpty ? null : query);
 
     final response = await _httpClient.get(
       uri,
@@ -74,19 +79,15 @@ class DiaryApiClient {
     final decoded = _decodeResponse(response);
     final data = decoded['data'];
     if (data is List) {
-      return data
-          .map((e) {
-            if (e is Map<String, dynamic>) {
-              return RemoteDiaryEntry.fromJson(e);
-            }
-            if (e is Map) {
-              return RemoteDiaryEntry.fromJson(
-                Map<String, dynamic>.from(e as Map),
-              );
-            }
-            throw const DiaryApiException('알 수 없는 일기 데이터 형식입니다.');
-          })
-          .toList();
+      return data.map((e) {
+        if (e is Map<String, dynamic>) {
+          return RemoteDiaryEntry.fromJson(e);
+        }
+        if (e is Map) {
+          return RemoteDiaryEntry.fromJson(Map<String, dynamic>.from(e as Map));
+        }
+        throw const DiaryApiException('알 수 없는 일기 데이터 형식입니다.');
+      }).toList();
     }
     throw const DiaryApiException('일기 목록을 불러올 수 없습니다.');
   }
@@ -104,9 +105,7 @@ class DiaryApiClient {
   }
 
   Map<String, String> _headers({String? token}) {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-    };
+    final headers = <String, String>{'Content-Type': 'application/json'};
     if (token != null && token.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
