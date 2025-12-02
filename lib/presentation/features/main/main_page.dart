@@ -908,7 +908,7 @@ class _TreeIllustrationState extends State<_TreeIllustration> {
       // Get emotion score, normalize from 0-100 to 0.0-1.0
       // Fallback to "보통" (neutral) if emotion data is missing
       final emotion = diary.dominantEmotion.isEmpty 
-          ? '보통' 
+          ? 'default' 
           : diary.dominantEmotion;
       final score = diary.emotionScores[emotion] ?? 50.0;
       
