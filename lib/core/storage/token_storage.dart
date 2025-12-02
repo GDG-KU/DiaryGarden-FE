@@ -1,21 +1,24 @@
 import 'dart:convert';
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class TokenStorage {
   static const _tokenKey = 'auth_token';
   static const _userKey = 'auth_user';
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(
+      encryptedSharedPreferences: true,
+    ),
+  );
 
   const TokenStorage._();
 
   static Future<void> saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    await _storage.write(key: _tokenKey, value: token);
   }
 
   static Future<String?> readToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString(_tokenKey);
+    final token = await _storage.read(key: _tokenKey);
     if (token == null || token.isEmpty) return null;
     return token;
   }
@@ -24,16 +27,20 @@ class TokenStorage {
     required String username,
     required String displayName,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _userKey,
-      jsonEncode({'username': username, 'displayName': displayName}),
-    );
+    try {
+      final encoded = jsonEncode({
+        'username': username,
+        'displayName': displayName,
+      });
+      await _storage.write(key: _userKey, value: encoded);
+    } catch (e) {
+      // Log error or rethrow if needed
+      throw Exception('Failed to save user data: $e');
+    }
   }
 
   static Future<Map<String, String>?> readUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final userJson = prefs.getString(_userKey);
+    final userJson = await _storage.read(key: _userKey);
     if (userJson == null || userJson.isEmpty) return null;
     try {
       final decoded = jsonDecode(userJson) as Map<String, dynamic>;
@@ -47,8 +54,7 @@ class TokenStorage {
   }
 
   static Future<void> clearToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_userKey);
+    await _storage.delete(key: _tokenKey);
+    await _storage.delete(key: _userKey);
   }
 }
