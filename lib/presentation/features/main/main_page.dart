@@ -12,6 +12,7 @@ import 'package:diary_garden/data/services/diary_sync_service.dart';
 import 'package:diary_garden/presentation/features/diary/diary_read_page.dart';
 import 'package:diary_garden/presentation/features/diary/diary_write_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
@@ -34,6 +35,7 @@ class _MainPageState extends State<MainPage> {
   List<DiaryEntry> _weekDiaries = [];
   String? _authToken;
   int _pendingCount = 0;
+  bool _isChangingPage = false;
 
   @override
   void initState() {
@@ -108,10 +110,10 @@ class _MainPageState extends State<MainPage> {
     final pendingDates = pendingDiaries.map((d) => d.writtenDate).toSet();
 
     try {
-      // Fetch all diaries (no limit, no updatedAfter for comprehensive fetch)
+      // Fetch recent diaries (limited to 100 to avoid performance issues)
       final diaries = await _diaryApiClient.fetchDiaries(
         authToken: token,
-        limit: 0, // 0 means fetch all
+        limit: 100, // Limit to recent entries instead of fetching all
       );
 
       // 로컬 캐시 업데이트
@@ -182,20 +184,15 @@ class _MainPageState extends State<MainPage> {
       final startDate = weekDates.first;
       final endDate = weekDates.last;
 
-      // Get all diaries in this date range
+      // Fetch diaries with server-side date filtering
       final allDiaries = await _diaryApiClient.fetchDiaries(
         authToken: token,
-        limit: 100,
+        writtenAfter: startDate,
+        writtenBefore: endDate,
       );
 
-      // Filter for current week and convert to DiaryEntry
-      final weekDiaries = <DiaryEntry>[];
-      for (final remoteDiary in allDiaries) {
-        final diaryDate = remoteDiary.writtenDate;
-        if (!diaryDate.isBefore(startDate) && !diaryDate.isAfter(endDate)) {
-          weekDiaries.add(_toDiaryEntry(remoteDiary));
-        }
-      }
+      // Convert to DiaryEntry
+      final weekDiaries = allDiaries.map(_toDiaryEntry).toList();
 
       if (mounted) {
         setState(() {
@@ -213,8 +210,14 @@ class _MainPageState extends State<MainPage> {
   }
 
   /// Handle page view changes when user swipes between weeks
-  Future<void> _onPageChanged(int index) async {
+  void _onPageChanged(int index) {
+    // Prevent recursive calls while resetting page position
+    if (_isChangingPage) return;
+    
     // index: 0 = previous week, 1 = current week, 2 = next week
+    // Only handle swipes to previous (0) or next (2) week
+    if (index == 1) return;
+    
     WeekInfo newWeek;
     switch (index) {
       case 0:
@@ -224,22 +227,30 @@ class _MainPageState extends State<MainPage> {
         newWeek = WeekCalculator.getNextWeek(_currentWeek);
         break;
       default:
-        return; // Stay on current week (index 1)
+        return;
     }
 
+    // Update UI immediately for responsive feel
     setState(() {
       _currentWeek = newWeek;
       _dayStatuses = _generateWeekStatuses(_currentWeek);
     });
 
-    // Load diaries for the new week
-    await _loadWeekDiaries();
-    await _loadRecentDiaries(); // Update day statuses with diary IDs
+    // Reset to middle page immediately to enable infinite scrolling
+    _isChangingPage = true;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _pageController.hasClients) {
+        _pageController.jumpToPage(1);
+        // Reset flag after a short delay to allow page change to complete
+        Future.delayed(const Duration(milliseconds: 100), () {
+          _isChangingPage = false;
+        });
+      }
+    });
 
-    // Reset to middle page for infinite scrolling effect
-    if (mounted && _pageController.hasClients) {
-      _pageController.jumpToPage(1);
-    }
+    // Load diaries in background (non-blocking)
+    _loadWeekDiaries();
+    _loadRecentDiaries();
   }
 
   RemoteDiaryEntry? _findDiaryForDate(
@@ -356,18 +367,13 @@ class _MainPageState extends State<MainPage> {
     // pending 상태인 경우 로컬에서 데이터 표시
     if (status.hasPendingDiary && status.diaryId == null) {
       final pendingDiaries = await PendingDiaryStorage.getPendingDiaries();
-      final pending = pendingDiaries.firstWhere(
-        (d) => DateUtils.isSameDay(d.writtenDate, status.date),
-        orElse: () => PendingDiary(
-          localId: '',
-          title: '',
-          content: '',
-          writtenDate: status.date,
-          createdAt: DateTime.now(),
-        ),
-      );
+      
+      // Use where().firstOrNull instead of firstWhere with sentinel value
+      final pending = pendingDiaries
+          .where((d) => DateUtils.isSameDay(d.writtenDate, status.date))
+          .firstOrNull;
 
-      if (pending.localId.isEmpty) {
+      if (pending == null) {
         _showSnackBar('저장된 일기를 찾을 수 없습니다.');
         return;
       }
