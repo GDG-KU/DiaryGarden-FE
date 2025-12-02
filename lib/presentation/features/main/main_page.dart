@@ -248,9 +248,17 @@ class _MainPageState extends State<MainPage> {
       }
     });
 
-    // Load diaries in background (non-blocking)
-    _loadWeekDiaries();
-    _loadRecentDiaries();
+    // Load diaries in background and update UI when complete
+    _loadWeekDiaries().then((_) {
+      if (mounted) {
+        setState(() {}); // Trigger rebuild to update tree illustration
+      }
+    });
+    _loadRecentDiaries().then((_) {
+      if (mounted) {
+        setState(() {}); // Trigger rebuild to update day statuses
+      }
+    });
   }
 
   RemoteDiaryEntry? _findDiaryForDate(
