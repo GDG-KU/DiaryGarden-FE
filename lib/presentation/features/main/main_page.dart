@@ -3,6 +3,8 @@ import 'package:diary_garden/core/storage/diary_storage.dart';
 import 'package:diary_garden/core/storage/pending_diary_storage.dart';
 import 'package:diary_garden/core/storage/token_storage.dart';
 import 'package:diary_garden/core/theme/app_colors.dart';
+import 'package:diary_garden/core/utils/tree_vector_util.dart';
+import 'package:diary_garden/core/utils/week_calculator.dart';
 import 'package:diary_garden/data/datasource/diary_api_client.dart';
 import 'package:diary_garden/data/models/diary_entry.dart';
 import 'package:diary_garden/data/models/remote_diary_entry.dart';
@@ -26,7 +28,10 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   late final DiaryApiClient _diaryApiClient;
   late final DiarySyncService _syncService;
+  late final PageController _pageController;
+  late WeekInfo _currentWeek;
   late List<_DayStatusModel> _dayStatuses;
+  List<DiaryEntry> _weekDiaries = [];
   String? _authToken;
   int _pendingCount = 0;
 
@@ -35,8 +40,16 @@ class _MainPageState extends State<MainPage> {
     super.initState();
     _diaryApiClient = DiaryApiClient();
     _syncService = DiarySyncService(apiClient: _diaryApiClient);
-    _dayStatuses = _generateWeekStatuses();
+    _pageController = PageController(initialPage: 1); // Start at middle (current week)
+    _currentWeek = WeekCalculator.getCurrentWeek();
+    _dayStatuses = _generateWeekStatuses(_currentWeek);
     _loadAuthToken();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAuthToken() async {
@@ -45,6 +58,7 @@ class _MainPageState extends State<MainPage> {
       _authToken = stored ?? ApiConfig.maybeAuthToken;
     });
     await _loadRecentDiaries();
+    await _loadWeekDiaries(); // Load diaries for current week
     await _syncPendingDiaries(); // 앱 시작 시 대기 중인 일기 동기화
   }
 
@@ -72,12 +86,10 @@ class _MainPageState extends State<MainPage> {
     }
   }
 
-  List<_DayStatusModel> _generateWeekStatuses() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final start = today.subtract(Duration(days: today.weekday % 7));
+  List<_DayStatusModel> _generateWeekStatuses(WeekInfo week) {
+    final weekDates = WeekCalculator.getWeekDates(week);
     return List.generate(_weekdayLabels.length, (index) {
-      final date = start.add(Duration(days: index));
+      final date = weekDates[index];
       final treeId = _treeIdForDate(date);
       return _DayStatusModel(
         label: _weekdayLabels[index],
@@ -96,16 +108,30 @@ class _MainPageState extends State<MainPage> {
     final pendingDates = pendingDiaries.map((d) => d.writtenDate).toSet();
 
     try {
-      // 증분 동기화: 마지막 동기화 이후 업데이트된 일기만 가져오기
-      final lastSync = await DiaryStorage.getLastSyncTimestamp();
+      // Fetch all diaries (no limit, no updatedAfter for comprehensive fetch)
       final diaries = await _diaryApiClient.fetchDiaries(
         authToken: token,
-        limit: lastSync == null ? 0 : 100, // 첫 동기화 시 전체, 이후 증분
-        updatedAfter: lastSync,
+        limit: 0, // 0 means fetch all
       );
 
       // 로컬 캐시 업데이트
-      await DiaryStorage.updateFromEntries(diaries, fullSync: lastSync == null);
+      await DiaryStorage.updateFromEntries(diaries, fullSync: true);
+
+      debugPrint('📅 Loaded ${diaries.length} diaries from API');
+      for (final diary in diaries) {
+        debugPrint('  - Diary: ${diary.writtenDate}');
+      }
+      
+      // Get current week date range
+      final weekDates = WeekCalculator.getWeekDates(_currentWeek);
+      final currentWeekStart = weekDates.first;
+      final currentWeekEnd = weekDates.last;
+      
+      debugPrint('📅 Current week: $currentWeekStart to $currentWeekEnd');
+      debugPrint('📅 Current week statuses:');
+      for (final status in _dayStatuses) {
+        debugPrint('  - ${status.date}: has diary = ${status.hasDiary}');
+      }
 
       if (!mounted) return;
       setState(() {
@@ -115,6 +141,7 @@ class _MainPageState extends State<MainPage> {
             (d) => DateUtils.isSameDay(d, status.date),
           );
           if (match != null) {
+            debugPrint('✅ Matched diary ${match.id.substring(0, 8)} to date ${status.date}');
             return status.copyWith(diaryId: match.id, hasPendingDiary: false);
           }
           if (isPending) {
@@ -141,6 +168,77 @@ class _MainPageState extends State<MainPage> {
           _pendingCount = pendingDiaries.length;
         });
       }
+    }
+  }
+
+  /// Load diaries for the current week and convert to DiaryEntry format
+  Future<void> _loadWeekDiaries() async {
+    final token = _authToken;
+    if (token == null) return;
+
+    try {
+      // Fetch diaries for the current week's date range
+      final weekDates = WeekCalculator.getWeekDates(_currentWeek);
+      final startDate = weekDates.first;
+      final endDate = weekDates.last;
+
+      // Get all diaries in this date range
+      final allDiaries = await _diaryApiClient.fetchDiaries(
+        authToken: token,
+        limit: 100,
+      );
+
+      // Filter for current week and convert to DiaryEntry
+      final weekDiaries = <DiaryEntry>[];
+      for (final remoteDiary in allDiaries) {
+        final diaryDate = remoteDiary.writtenDate;
+        if (!diaryDate.isBefore(startDate) && !diaryDate.isAfter(endDate)) {
+          weekDiaries.add(_toDiaryEntry(remoteDiary));
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _weekDiaries = weekDiaries;
+        });
+      }
+    } catch (error) {
+      debugPrint('Failed to load week diaries: $error');
+      if (mounted) {
+        setState(() {
+          _weekDiaries = [];
+        });
+      }
+    }
+  }
+
+  /// Handle page view changes when user swipes between weeks
+  Future<void> _onPageChanged(int index) async {
+    // index: 0 = previous week, 1 = current week, 2 = next week
+    WeekInfo newWeek;
+    switch (index) {
+      case 0:
+        newWeek = WeekCalculator.getPreviousWeek(_currentWeek);
+        break;
+      case 2:
+        newWeek = WeekCalculator.getNextWeek(_currentWeek);
+        break;
+      default:
+        return; // Stay on current week (index 1)
+    }
+
+    setState(() {
+      _currentWeek = newWeek;
+      _dayStatuses = _generateWeekStatuses(_currentWeek);
+    });
+
+    // Load diaries for the new week
+    await _loadWeekDiaries();
+    await _loadRecentDiaries(); // Update day statuses with diary IDs
+
+    // Reset to middle page for infinite scrolling effect
+    if (mounted && _pageController.hasClients) {
+      _pageController.jumpToPage(1);
     }
   }
 
@@ -387,7 +485,11 @@ class _MainPageState extends State<MainPage> {
           children: [
             Positioned.fill(
               child: _MainScrollView(
+                pageController: _pageController,
+                currentWeek: _currentWeek,
                 statuses: _dayStatuses,
+                weekDiaries: _weekDiaries,
+                onPageChanged: _onPageChanged,
                 onDayTap: _handleDayTap,
                 onMenuTap: _handleMenuTap,
                 onCalendarTap: _openCalendar,
@@ -404,14 +506,22 @@ class _MainPageState extends State<MainPage> {
 
 class _MainScrollView extends StatelessWidget {
   const _MainScrollView({
+    required this.pageController,
+    required this.currentWeek,
     required this.statuses,
+    required this.weekDiaries,
+    required this.onPageChanged,
     required this.onDayTap,
     required this.onMenuTap,
     required this.onCalendarTap,
     required this.onProfileTap,
   });
 
+  final PageController pageController;
+  final WeekInfo currentWeek;
   final List<_DayStatusModel> statuses;
+  final List<DiaryEntry> weekDiaries;
+  final ValueChanged<int> onPageChanged;
   final ValueChanged<_DayStatusModel> onDayTap;
   final VoidCallback onMenuTap;
   final VoidCallback onCalendarTap;
@@ -431,13 +541,28 @@ class _MainScrollView extends StatelessWidget {
             onCalendarTap: onCalendarTap,
             onProfileTap: onProfileTap,
           ),
-          const SizedBox(height: 48),
+          const SizedBox(height: 32),
+          // Week header (e.g., "12월 3주차")
+          _WeekHeader(weekInfo: currentWeek),
+          const SizedBox(height: 16),
           const _DayHeaderRow(),
           const SizedBox(height: 10),
-          _DayStatusRow(statuses: statuses, onTap: onDayTap),
+          // PageView for week navigation
+          SizedBox(
+            height: 50, // Height for day bubbles
+            child: PageView(
+              controller: pageController,
+              onPageChanged: onPageChanged,
+              children: [
+                _DayStatusRow(statuses: statuses, onTap: onDayTap), // Prev (placeholder)
+                _DayStatusRow(statuses: statuses, onTap: onDayTap), // Current
+                _DayStatusRow(statuses: statuses, onTap: onDayTap), // Next (placeholder)
+              ],
+            ),
+          ),
           const SizedBox(height: 116),
           _TreeIllustration(
-            writtenCount: statuses.where((s) => s.hasDiary).length,
+            weekDiaries: weekDiaries,
           ),
         ],
       ),
@@ -532,6 +657,29 @@ class _TopIconButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: child,
       onTap: onTap,
+    );
+  }
+}
+
+class _WeekHeader extends StatelessWidget {
+  const _WeekHeader({required this.weekInfo});
+
+  final WeekInfo weekInfo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Center(
+        child: Text(
+          weekInfo.displayLabel, // e.g., "12월 3주차"
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -703,19 +851,9 @@ class _DayStatusModel {
 }
 
 class _TreeIllustration extends StatelessWidget {
-  const _TreeIllustration({required this.writtenCount});
+  const _TreeIllustration({required this.weekDiaries});
 
-  final int writtenCount;
-
-  String get _assetPath {
-    final level = switch (writtenCount) {
-      0 => 1,
-      1 || 2 => 2,
-      3 || 4 || 5 => 3,
-      _ => 4,
-    };
-    return 'assets/svgs/tree_level_$level.svg';
-  }
+  final List<DiaryEntry> weekDiaries;
 
   @override
   Widget build(BuildContext context) {
@@ -724,20 +862,50 @@ class _TreeIllustration extends StatelessWidget {
       child: SizedBox(
         height: 320,
         child: Center(
-          child: _SvgAssetPicture(
-            assetPath: _assetPath,
-            width: 260,
-            height: 260,
-            semanticLabel: 'tree_level',
-            fallback: Icon(
-              Icons.park_rounded,
-              size: 120,
-              color: AppColors.leafGreen.withValues(alpha: 0.7),
-            ),
+          child: FutureBuilder<TreeVectorData>(
+            future: _buildTreeData(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                // Show loading indicator while generating tree
+                return const CircularProgressIndicator();
+              }
+
+              if (snapshot.hasError || !snapshot.hasData) {
+                // Fallback to simple icon if error occurs
+                return Icon(
+                  Icons.park_rounded,
+                  size: 120,
+                  color: AppColors.leafGreen.withValues(alpha: 0.7),
+                );
+              }
+
+              final treeData = snapshot.data!;
+              return treeData.toPicture(width: 260);
+            },
           ),
         ),
       ),
     );
+  }
+
+  Future<TreeVectorData> _buildTreeData() async {
+    // Convert DiaryEntry list to emotion data format for TreeVectorUtil
+    final emotionData = weekDiaries.map((diary) {
+      // Get emotion score, normalize from 0-100 to 0.0-1.0
+      // Fallback to "보통" (neutral) if emotion data is missing
+      final emotion = diary.dominantEmotion.isEmpty 
+          ? '보통' 
+          : diary.dominantEmotion;
+      final score = diary.emotionScores[emotion] ?? 50.0;
+      
+      return {
+        'emotion': emotion,
+        'score': score / 100.0, // Normalize to 0.0-1.0
+      };
+    }).toList();
+
+    // Generate tree using TreeVectorUtil
+    return TreeVectorUtil.svgFor(emotionData: emotionData);
   }
 }
 
