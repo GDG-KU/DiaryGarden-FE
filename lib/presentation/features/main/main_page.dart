@@ -850,47 +850,55 @@ class _DayStatusModel {
   }
 }
 
-class _TreeIllustration extends StatelessWidget {
+class _TreeIllustration extends StatefulWidget {
   const _TreeIllustration({required this.weekDiaries});
 
   final List<DiaryEntry> weekDiaries;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 36),
-      child: SizedBox(
-        height: 320,
-        child: Center(
-          child: FutureBuilder<TreeVectorData>(
-            future: _buildTreeData(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                // Show loading indicator while generating tree
-                return const CircularProgressIndicator();
-              }
+  State<_TreeIllustration> createState() => _TreeIllustrationState();
+}
 
-              if (snapshot.hasError || !snapshot.hasData) {
-                // Fallback to simple icon if error occurs
-                return Icon(
-                  Icons.park_rounded,
-                  size: 120,
-                  color: AppColors.leafGreen.withValues(alpha: 0.7),
-                );
-              }
+class _TreeIllustrationState extends State<_TreeIllustration> {
+  TreeVectorData? _cachedTreeData;
+  bool _isLoading = false;
 
-              final treeData = snapshot.data!;
-              return treeData.toPicture(width: 260);
-            },
-          ),
-        ),
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _loadTreeData();
+  }
+
+  @override
+  void didUpdateWidget(_TreeIllustration oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Reload tree data when weekDiaries changes
+    if (widget.weekDiaries != oldWidget.weekDiaries) {
+      _loadTreeData();
+    }
+  }
+
+  Future<void> _loadTreeData() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      final treeData = await _buildTreeData();
+      if (mounted) {
+        setState(() {
+          _cachedTreeData = treeData;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   Future<TreeVectorData> _buildTreeData() async {
     // Convert DiaryEntry list to emotion data format for TreeVectorUtil
-    final emotionData = weekDiaries.map((diary) {
+    final emotionData = widget.weekDiaries.map((diary) {
       // Get emotion score, normalize from 0-100 to 0.0-1.0
       // Fallback to "보통" (neutral) if emotion data is missing
       final emotion = diary.dominantEmotion.isEmpty 
@@ -906,6 +914,34 @@ class _TreeIllustration extends StatelessWidget {
 
     // Generate tree using TreeVectorUtil
     return TreeVectorUtil.svgFor(emotionData: emotionData);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 36),
+      child: SizedBox(
+        height: 320,
+        child: Center(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeInOut,
+            switchOutCurve: Curves.easeInOut,
+            child: _cachedTreeData != null
+                ? KeyedSubtree(
+                    key: ValueKey(_cachedTreeData.hashCode),
+                    child: _cachedTreeData!.toPicture(width: 260),
+                  )
+                : Icon(
+                    Icons.park_rounded,
+                    key: const ValueKey('fallback'),
+                    size: 120,
+                    color: AppColors.leafGreen.withValues(alpha: 0.7),
+                  ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
