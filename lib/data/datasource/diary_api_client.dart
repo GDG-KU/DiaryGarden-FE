@@ -56,6 +56,8 @@ class DiaryApiClient {
     int limit = 0,
     String? lastDocId,
     DateTime? updatedAfter,
+    DateTime? writtenAfter,
+    DateTime? writtenBefore,
   }) async {
     final query = <String, String>{};
     if (limit > 0) {
@@ -66,6 +68,12 @@ class DiaryApiClient {
     }
     if (updatedAfter != null) {
       query['updatedAfter'] = updatedAfter.toUtc().toIso8601String();
+    }
+    if (writtenAfter != null) {
+      query['writtenAfter'] = writtenAfter.toUtc().toIso8601String();
+    }
+    if (writtenBefore != null) {
+      query['writtenBefore'] = writtenBefore.toUtc().toIso8601String();
     }
 
     final uri = Uri.parse(
