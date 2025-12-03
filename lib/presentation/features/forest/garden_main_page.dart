@@ -6,9 +6,25 @@ import 'package:diary_garden/data/datasource/forest_api_client.dart';
 import 'package:diary_garden/data/models/remote_diary_entry.dart';
 import 'package:diary_garden/data/models/tree_position.dart';
 import 'package:diary_garden/core/utils/tree_vector_util.dart';
+import 'package:diary_garden/core/utils/week_calculator.dart';
 import 'package:diary_garden/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
+/// Represents a tree for a specific week, aggregated from multiple diaries
+class WeeklyTree {
+  const WeeklyTree({
+    required this.weekId,
+    required this.weekLabel,
+    required this.diaries,
+    required this.averageEmotionData,
+  });
+
+  final String weekId; // e.g., "week_2025_12_1"
+  final String weekLabel; // e.g., "12월 1주차"
+  final List<RemoteDiaryEntry> diaries;
+  final List<Map<String, dynamic>> averageEmotionData;
+}
 
 class GardenMainPage extends StatefulWidget {
   const GardenMainPage({super.key});
@@ -23,16 +39,16 @@ class _GardenMainPageState extends State<GardenMainPage> {
 
   String? _authToken;
   bool _loading = true;
-  List<RemoteDiaryEntry> _diaries = [];
-  Map<String, TreePosition> _positions = {}; // treeId -> position
+  List<WeeklyTree> _weeklyTrees = []; // Changed from _diaries
+  Map<String, TreePosition> _positions = {}; // weekId -> position
   Set<String> _dirtyPositions = {}; // Track which positions changed
-  late String _gardenLevel;
+  late DateTime _selectedMonth;
+  String get _gardenLevel => '${_selectedMonth.year}-${_selectedMonth.month.toString().padLeft(2, '0')}';
 
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _gardenLevel = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    _selectedMonth = DateTime.now();
     _loadData();
   }
 
@@ -49,14 +65,20 @@ class _GardenMainPageState extends State<GardenMainPage> {
     final token = _authToken;
     if (token == null) return;
 
-    debugPrint('🔄 Syncing ${_dirtyPositions.length} dirty positions...');
+    debugPrint('🔄 Syncing ${_dirtyPositions.length} dirty positions for $_gardenLevel...');
+
+    final successfulSyncs = <String>{};
 
     for (final treeId in _dirtyPositions) {
       final position = _positions[treeId];
-      if (position == null) continue;
+      if (position == null) {
+        successfulSyncs.add(treeId); // Remove if not found
+        continue;
+      }
 
       try {
-        await _forestApiClient.updateTreePosition(
+        debugPrint('📤 Syncing tree $treeId at (${position.positionX.toStringAsFixed(3)}, ${position.positionY.toStringAsFixed(3)})');
+        final updated = await _forestApiClient.updateTreePosition(
           authToken: token,
           gardenLevel: _gardenLevel,
           treeId: treeId,
@@ -64,15 +86,27 @@ class _GardenMainPageState extends State<GardenMainPage> {
           positionY: position.positionY,
         );
         debugPrint('✅ Synced position for tree $treeId');
+        successfulSyncs.add(treeId);
       } catch (e) {
         debugPrint('❌ Failed to sync position for tree $treeId: $e');
       }
     }
 
-    _dirtyPositions.clear();
+    setState(() {
+      _dirtyPositions.removeWhere((id) => successfulSyncs.contains(id));
+    });
+    
+    if (_dirtyPositions.isNotEmpty) {
+      debugPrint('⚠️ ${_dirtyPositions.length} positions failed to sync');
+    } else {
+      debugPrint('✅ Position sync complete for $_gardenLevel');
+    }
   }
 
   Future<void> _loadData() async {
+    // Sync dirty positions from previous month before loading new data
+    await _syncDirtyPositions();
+    
     setState(() => _loading = true);
     
     final token = await TokenStorage.readToken() ?? ApiConfig.maybeAuthToken;
@@ -84,10 +118,12 @@ class _GardenMainPageState extends State<GardenMainPage> {
     }
 
     try {
-      // Load diaries for current month
-      final now = DateTime.now();
-      final startDate = DateTime(now.year, now.month, 1);
-      final endDate = DateTime(now.year, now.month + 1, 0);
+      // Load diaries for selected month
+      // Use first day of NEXT month as exclusive end date to ensure full current month is covered
+      final startDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
+      final endDate = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1);
+
+      debugPrint('🌳 Loading garden data for $_gardenLevel ($startDate to $endDate)');
 
       final diaries = await _diaryApiClient.fetchDiaries(
         authToken: token,
@@ -95,37 +131,131 @@ class _GardenMainPageState extends State<GardenMainPage> {
         writtenBefore: endDate,
       );
 
-      // Load tree positions from cache first, then server
+      debugPrint('📚 Loaded ${diaries.length} diaries for $_gardenLevel');
+
+      // Group diaries by week and create WeeklyTree objects
+      final weeklyTrees = _generateWeeklyTrees(diaries);
+      debugPrint('🌲 Generated ${weeklyTrees.length} weekly trees');
+
+      // Load tree positions from cache first
       final cachedPositions = await TreePositionStorage.loadPositions(_gardenLevel);
       final positionMap = {for (var p in cachedPositions) p.treeId: p};
+      debugPrint('📂 Loaded ${cachedPositions.length} cached positions for $_gardenLevel');
 
       try {
         final serverPositions = await _forestApiClient.fetchTreePositions(
           authToken: token,
           gardenLevel: _gardenLevel,
         );
-        // Update cache with server data
-        await TreePositionStorage.savePositions(_gardenLevel, serverPositions);
-        // Merge server positions
-        for (var p in serverPositions) {
-          positionMap[p.treeId] = p;
+        debugPrint('☁️ Loaded ${serverPositions.length} positions from server for $_gardenLevel');
+        
+        // Update cache with server data, BUT respect local dirty state
+        final mergedPositions = <TreePosition>[];
+        
+        for (var serverPos in serverPositions) {
+          if (_dirtyPositions.contains(serverPos.treeId)) {
+            // Keep local dirty version
+            if (positionMap.containsKey(serverPos.treeId)) {
+              mergedPositions.add(positionMap[serverPos.treeId]!);
+            } else {
+              mergedPositions.add(serverPos);
+            }
+          } else {
+            // Use server version
+            mergedPositions.add(serverPos);
+            positionMap[serverPos.treeId] = serverPos;
+          }
         }
+        
+        await TreePositionStorage.savePositions(_gardenLevel, mergedPositions);
+        
+        debugPrint('✅ Final position count: ${positionMap.length}');
       } catch (e) {
-        debugPrint('Failed to load positions from server, using cache: $e');
+        debugPrint('⚠️ Failed to load positions from server, using cache: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('서버에서 나무 위치를 불러오는데 실패했습니다: $e')),
+          );
+        }
       }
 
       setState(() {
-        _diaries = diaries;
+        _weeklyTrees = weeklyTrees;
         _positions = positionMap;
         _loading = false;
       });
     } catch (e) {
-      debugPrint('Failed to load garden data: $e');
+      debugPrint('❌ Failed to load garden data: $e');
       setState(() => _loading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('데이터를 불러오는데 실패했습니다: $e')),
+        );
+      }
     }
   }
 
-  void _updateTreePosition(String treeId, double x, double y) {
+  List<WeeklyTree> _generateWeeklyTrees(List<RemoteDiaryEntry> diaries) {
+    // Group diaries by weekId
+    final Map<String, List<RemoteDiaryEntry>> diariesByWeek = {};
+    final Map<String, WeekInfo> weekInfoMap = {};
+
+    for (final diary in diaries) {
+      final weekInfo = WeekCalculator.getWeekInfo(diary.writtenDate);
+      final weekId = 'week_${weekInfo.weekId}'; // e.g., week_2025_12_1
+      
+      if (!diariesByWeek.containsKey(weekId)) {
+        diariesByWeek[weekId] = [];
+        weekInfoMap[weekId] = weekInfo;
+      }
+      diariesByWeek[weekId]!.add(diary);
+    }
+
+    // Create WeeklyTree objects
+    final trees = <WeeklyTree>[];
+    for (final entry in diariesByWeek.entries) {
+      final weekId = entry.key;
+      final weekDiaries = entry.value;
+      final weekInfo = weekInfoMap[weekId]!;
+
+      // Calculate average emotion
+      // TODO: Parse actual emotion data from content if available, or use placeholder
+      // For now, we'll assume a default emotion or try to parse if structure allows
+      final emotionData = _generateEmotionData(weekDiaries);
+
+      trees.add(WeeklyTree(
+        weekId: weekId,
+        weekLabel: weekInfo.displayLabel,
+        diaries: weekDiaries,
+        averageEmotionData: emotionData,
+      ));
+    }
+    
+    // Sort by weekId to ensure consistent order
+    trees.sort((a, b) => a.weekId.compareTo(b.weekId));
+
+    return trees;
+  }
+
+  List<Map<String, dynamic>> _generateEmotionData(List<RemoteDiaryEntry> diaries) {
+    // Match MainPage logic: map each diary to an emotion entry
+    return diaries.map((diary) {
+      // TODO: Parse actual emotion data from content if available
+      // For now, use default/placeholder logic similar to MainPage
+      // MainPage uses: emotion = 'default', score = 1.0 (if from _toDiaryEntry)
+      
+      // If we had real emotion data:
+      // final emotion = diary.dominantEmotion;
+      // final score = diary.emotionScores[emotion];
+      
+      return {
+        'emotion': 'default',
+        'score': 1.0, // Use 1.0 to match MainPage's visual
+      };
+    }).toList();
+  }
+
+  Future<void> _updateTreePosition(String treeId, double x, double y) async {
     final position = TreePosition(
       gardenLevel: _gardenLevel,
       treeId: treeId,
@@ -140,14 +270,31 @@ class _GardenMainPageState extends State<GardenMainPage> {
       _dirtyPositions.add(treeId);
     });
 
-    // Save to cache only (no server sync yet)
-    TreePositionStorage.updatePosition(position);
+    // Save to cache immediately
+    try {
+      await TreePositionStorage.updatePosition(position);
+      debugPrint('💾 Cached position for tree $treeId at (${x.toStringAsFixed(3)}, ${y.toStringAsFixed(3)})');
+    } catch (e) {
+      debugPrint('❌ Failed to cache position: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('위치 저장 실패: $e')),
+        );
+      }
+    }
+  }
+
+  void _changeMonth(int delta) async {
+    final newMonth = DateTime(_selectedMonth.year, _selectedMonth.month + delta, 1);
+    setState(() {
+      _selectedMonth = newMonth;
+    });
+    await _loadData();
   }
 
   @override
   Widget build(BuildContext context) {
     const offWhite = Color(0xFFFAF6EE);
-    const lawn = Color(0xFF8BC68B);
 
     return Scaffold(
       backgroundColor: offWhite,
@@ -162,17 +309,22 @@ class _GardenMainPageState extends State<GardenMainPage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // Summary header
+                // Month navigation header
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                   child: Row(
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left),
+                        onPressed: () => _changeMonth(-1),
+                        tooltip: '이전 달',
+                      ),
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Text(
-                              '$_gardenLevel',
+                              '${_selectedMonth.year}년 ${_selectedMonth.month}월',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600,
@@ -180,7 +332,7 @@ class _GardenMainPageState extends State<GardenMainPage> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              '나무 수: ${_diaries.length}그루',
+                              '나무 수: ${_weeklyTrees.length}그루', // Changed to tree count
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w500,
@@ -189,6 +341,11 @@ class _GardenMainPageState extends State<GardenMainPage> {
                           ],
                         ),
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right),
+                        onPressed: () => _changeMonth(1),
+                        tooltip: '다음 달',
+                      ),
                     ],
                   ),
                 ),
@@ -196,7 +353,7 @@ class _GardenMainPageState extends State<GardenMainPage> {
                 // Interactive forest area
                 Expanded(
                   child: _ForestCanvas(
-                    diaries: _diaries,
+                    weeklyTrees: _weeklyTrees, // Changed param
                     positions: _positions,
                     onPositionUpdate: _updateTreePosition,
                   ),
@@ -219,12 +376,12 @@ class _GardenMainPageState extends State<GardenMainPage> {
 
 class _ForestCanvas extends StatelessWidget {
   const _ForestCanvas({
-    required this.diaries,
+    required this.weeklyTrees,
     required this.positions,
     required this.onPositionUpdate,
   });
 
-  final List<RemoteDiaryEntry> diaries;
+  final List<WeeklyTree> weeklyTrees;
   final Map<String, TreePosition> positions;
   final Function(String treeId, double x, double y) onPositionUpdate;
 
@@ -258,10 +415,10 @@ class _ForestCanvas extends StatelessWidget {
               ),
 
               // Trees
-              ...diaries.asMap().entries.map((entry) {
+              ...weeklyTrees.asMap().entries.map((entry) {
                 final index = entry.key;
-                final diary = entry.value;
-                final position = positions[diary.treeId];
+                final tree = entry.value;
+                final position = positions[tree.weekId];
 
                 // Default position if not set (grid layout)
                 final defaultX = ((index % 4) * 0.25 + 0.125);
@@ -271,14 +428,14 @@ class _ForestCanvas extends StatelessWidget {
                 final y = position?.positionY ?? defaultY;
 
                 return _DraggableTree(
-                  key: ValueKey(diary.id), // Use diary.id for uniqueness
-                  diary: diary,
+                  key: ValueKey(tree.weekId),
+                  tree: tree,
                   initialX: x,
                   initialY: y,
                   canvasWidth: width,
                   canvasHeight: height,
                   onPositionChanged: (newX, newY) {
-                    onPositionUpdate(diary.treeId, newX, newY);
+                    onPositionUpdate(tree.weekId, newX, newY);
                   },
                 );
               }),
@@ -293,7 +450,7 @@ class _ForestCanvas extends StatelessWidget {
 class _DraggableTree extends StatefulWidget {
   const _DraggableTree({
     super.key,
-    required this.diary,
+    required this.tree,
     required this.initialX,
     required this.initialY,
     required this.canvasWidth,
@@ -301,7 +458,7 @@ class _DraggableTree extends StatefulWidget {
     required this.onPositionChanged,
   });
 
-  final RemoteDiaryEntry diary;
+  final WeeklyTree tree;
   final double initialX;
   final double initialY;
   final double canvasWidth;
@@ -313,57 +470,84 @@ class _DraggableTree extends StatefulWidget {
 }
 
 class _DraggableTreeState extends State<_DraggableTree> {
-  late double _normalizedX;
-  late double _normalizedY;
+  // Store absolute position for smoother dragging
+  late double _currentLeft;
+  late double _currentTop;
+  final double _treeSize = 80.0;
 
   @override
   void initState() {
     super.initState();
-    _normalizedX = widget.initialX;
-    _normalizedY = widget.initialY;
+    _updatePositionFromWidget();
+  }
+
+  @override
+  void didUpdateWidget(_DraggableTree oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialX != widget.initialX || 
+        oldWidget.initialY != widget.initialY ||
+        oldWidget.canvasWidth != widget.canvasWidth ||
+        oldWidget.canvasHeight != widget.canvasHeight) {
+      _updatePositionFromWidget();
+    }
+  }
+
+  void _updatePositionFromWidget() {
+    _currentLeft = (widget.initialX * widget.canvasWidth) - (_treeSize / 2);
+    _currentTop = (widget.initialY * widget.canvasHeight) - (_treeSize / 2);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Convert normalized coordinates to absolute positions
-    const treeSize = 80.0;
-    final left = (_normalizedX * widget.canvasWidth) - (treeSize / 2);
-    final top = (_normalizedY * widget.canvasHeight) - (treeSize / 2);
-
     return Positioned(
-      left: left,
-      top: top,
+      left: _currentLeft,
+      top: _currentTop,
       child: GestureDetector(
         onPanUpdate: (details) {
-          // Update position based on delta, working with CURRENT state
           setState(() {
-            // Calculate new absolute positions from current state
-            final currentLeft = (_normalizedX * widget.canvasWidth) - (treeSize / 2);
-            final currentTop = (_normalizedY * widget.canvasHeight) - (treeSize / 2);
-            
-            final newLeft = currentLeft + details.delta.dx;
-            final newTop = currentTop + details.delta.dy;
-
-            // Convert back to normalized coordinates
-            _normalizedX = ((newLeft + treeSize / 2) / widget.canvasWidth).clamp(0.0, 1.0);
-            _normalizedY = ((newTop + treeSize / 2) / widget.canvasHeight).clamp(0.0, 1.0);
+            _currentLeft += details.delta.dx;
+            _currentTop += details.delta.dy;
           });
         },
         onPanEnd: (details) {
-          // Save position when drag ends
-          widget.onPositionChanged(_normalizedX, _normalizedY);
+          // Normalize and clamp only when drag ends
+          final normalizedX = ((_currentLeft + _treeSize / 2) / widget.canvasWidth).clamp(0.0, 1.0);
+          final normalizedY = ((_currentTop + _treeSize / 2) / widget.canvasHeight).clamp(0.0, 1.0);
+          
+          widget.onPositionChanged(normalizedX, normalizedY);
         },
-        child: _TreeWidget(size: treeSize, diary: widget.diary),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _TreeWidget(size: _treeSize, emotionData: widget.tree.averageEmotionData),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                widget.tree.weekLabel,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _TreeWidget extends StatefulWidget {
-  const _TreeWidget({required this.size, required this.diary});
+  const _TreeWidget({required this.size, required this.emotionData});
 
   final double size;
-  final RemoteDiaryEntry diary;
+  final List<Map<String, dynamic>> emotionData;
 
   @override
   State<_TreeWidget> createState() => _TreeWidgetState();
@@ -379,21 +563,17 @@ class _TreeWidgetState extends State<_TreeWidget> {
     _loadTree();
   }
 
+  @override
+  void didUpdateWidget(_TreeWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.emotionData != oldWidget.emotionData) {
+      _loadTree();
+    }
+  }
+
   Future<void> _loadTree() async {
     try {
-      // Parse diary content to extract emotion data
-      final content = widget.diary.content;
-      
-      // For now, use a default emotion until we have proper emotion analysis
-      // TODO: Parse content or fetch emotion data from API
-      final emotionData = [
-        {
-          'emotion': 'default',
-          'score': 0.8,
-        }
-      ];
-
-      final treeData = await TreeVectorUtil.svgFor(emotionData: emotionData);
+      final treeData = await TreeVectorUtil.svgFor(emotionData: widget.emotionData);
       if (mounted) {
         setState(() {
           _treeData = treeData;
