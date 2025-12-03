@@ -119,9 +119,9 @@ class _GardenMainPageState extends State<GardenMainPage> {
 
     try {
       // Load diaries for selected month
-      // Use first day of NEXT month as exclusive end date to ensure full current month is covered
-      final startDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1);
-      final endDate = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1);
+      // Expand range by +/- 7 days to handle weeks overlapping month boundaries
+      final startDate = DateTime(_selectedMonth.year, _selectedMonth.month, 1).subtract(const Duration(days: 7));
+      final endDate = DateTime(_selectedMonth.year, _selectedMonth.month + 1, 1).add(const Duration(days: 7));
 
       debugPrint('🌳 Loading garden data for $_gardenLevel ($startDate to $endDate)');
 
@@ -202,6 +202,12 @@ class _GardenMainPageState extends State<GardenMainPage> {
 
     for (final diary in diaries) {
       final weekInfo = WeekCalculator.getWeekInfo(diary.writtenDate);
+      
+      // STRICT FILTER: Only include weeks that belong to the currently selected month
+      if (weekInfo.year != _selectedMonth.year || weekInfo.month != _selectedMonth.month) {
+        continue;
+      }
+
       final weekId = 'week_${weekInfo.weekId}'; // e.g., week_2025_12_1
       
       if (!diariesByWeek.containsKey(weekId)) {
