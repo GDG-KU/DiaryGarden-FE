@@ -286,6 +286,9 @@ class _MainPageState extends State<MainPage> {
     );
     if (saved == true) {
       await _loadRecentDiaries();
+      await _syncPendingDiaries();
+      await _loadWeekDiaries();
+      // pending 일기가 있다면 즉시 서버 동기화 시도
     }
   }
 
