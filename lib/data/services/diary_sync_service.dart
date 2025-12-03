@@ -95,6 +95,8 @@ class DiarySyncService {
       final result = SyncResult(successCount: 0, failCount: 0, error: e.toString());
       _syncCompleter!.complete(result);
       return result;
+    } finally {
+      _syncCompleter = null;
     }
   }
 
