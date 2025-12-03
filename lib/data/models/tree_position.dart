@@ -21,8 +21,8 @@ class TreePosition {
       gardenLevel: json['gardenLevel']?.toString() ?? 
                    json['garden_level']?.toString() ?? '',
       treeId: json['treeId']?.toString() ?? json['tree_id']?.toString() ?? '',
-      positionX: (json['positionX'] ?? json['position_x'] ?? 0.5).toDouble(),
-      positionY: (json['positionY'] ?? json['position_y'] ?? 0.5).toDouble(),
+      positionX: (json['positionX'] ?? json['position_x'] ?? 0.5).toDouble().clamp(0.0, 1.0),
+      positionY: (json['positionY'] ?? json['position_y'] ?? 0.5).toDouble().clamp(0.0, 1.0),
       updatedAt: _parseDate(json['updatedAt']) ?? 
                  _parseDate(json['updated_at']) ?? 
                  DateTime.now(),

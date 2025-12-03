@@ -57,15 +57,11 @@ class TreePositionStorage {
 
   /// Update a single tree position in cache
   static Future<void> updatePosition(TreePosition position) async {
-    try {
-      final positions = await loadPositions(position.gardenLevel);
-      final updatedPositions = positions.where((p) => p.treeId != position.treeId).toList()
-        ..add(position);
-      await savePositions(position.gardenLevel, updatedPositions);
-      debugPrint('💾 Updated position for tree ${position.treeId} in ${position.gardenLevel}');
-    } catch (e) {
-      debugPrint('⚠️ Failed to update tree position: $e');
-    }
+    final positions = await loadPositions(position.gardenLevel);
+    final updatedPositions = positions.where((p) => p.treeId != position.treeId).toList()
+      ..add(position);
+    await savePositions(position.gardenLevel, updatedPositions);
+    debugPrint('💾 Updated position for tree ${position.treeId} in ${position.gardenLevel}');
   }
 
   /// Clear all cached tree positions
