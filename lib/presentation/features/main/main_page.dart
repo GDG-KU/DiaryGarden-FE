@@ -505,7 +505,7 @@ class _MainPageState extends State<MainPage> {
     return DiaryEntry(
       id: entry.id,
       title: parsed.title.isEmpty ? '오늘 하루' : parsed.title,
-      content: parsed.body.isEmpty ? parsed.title : parsed.body,
+      content: parsed.body, // Only use body to avoid title duplication
       date: entry.writtenDate,
       emotionScores: const {'default': 1.0},
       dominantEmotion: 'default',
