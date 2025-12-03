@@ -5,6 +5,7 @@ class AuthSession {
     required this.email,
     required this.displayName,
     required this.username,
+    this.refreshToken,
   });
 
   final String token;
@@ -12,6 +13,7 @@ class AuthSession {
   final String email;
   final String displayName;
   final String username;
+  final String? refreshToken;
 
   factory AuthSession.fromJson(Map<String, dynamic> json, {String? fallbackToken}) {
     return AuthSession(
@@ -20,8 +22,10 @@ class AuthSession {
       email: (json['email'] ?? '').toString(),
       displayName: (json['displayName'] ?? json['nickname'] ?? '').toString(),
       username: (json['username'] ?? '').toString(),
+      refreshToken: json['refreshToken']?.toString(),
     );
   }
 
   bool get hasToken => token.isNotEmpty;
+  bool get hasRefreshToken => refreshToken != null && refreshToken!.isNotEmpty;
 }

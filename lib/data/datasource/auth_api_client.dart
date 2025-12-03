@@ -91,6 +91,23 @@ class AuthApiClient {
     return AuthSession.fromJson(data, fallbackToken: token);
   }
 
+  /// RefreshToken으로 새로운 AccessToken 발급
+  Future<AuthSession> refreshAccessToken(String refreshToken) async {
+    final uri = Uri.parse('$_baseUrl/api/auth/refresh');
+    final response = await _httpClient
+        .post(
+          uri,
+          headers: _jsonHeaders(),
+          body: jsonEncode({
+            'refreshToken': refreshToken,
+          }),
+        )
+        .timeout(_defaultTimeout);
+    final decoded = _decodeResponse(response);
+    final data = _expectMap(decoded['data']);
+    return AuthSession.fromJson(data);
+  }
+
   Map<String, dynamic> _decodeResponse(http.Response response) {
     if (response.body.isEmpty) {
       throw AuthApiException('빈 응답을 받았습니다. (${response.statusCode})');
