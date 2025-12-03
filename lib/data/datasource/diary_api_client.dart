@@ -6,11 +6,14 @@ import 'package:diary_garden/core/config/api_config.dart';
 import 'package:diary_garden/data/models/remote_diary_entry.dart';
 
 class DiaryApiException implements Exception {
-  const DiaryApiException(this.message);
+  const DiaryApiException(this.message, {this.statusCode});
   final String message;
+  final int? statusCode;
+
+  bool get isUnauthorized => statusCode == 401;
 
   @override
-  String toString() => 'DiaryApiException: $message';
+  String toString() => 'DiaryApiException: $message (status: $statusCode)';
 }
 
 class DiaryApiClient {
@@ -122,13 +125,16 @@ class DiaryApiClient {
 
   Map<String, dynamic> _decodeResponse(http.Response response) {
     if (response.body.isEmpty) {
-      throw DiaryApiException('빈 응답을 받았습니다. (${response.statusCode})');
+      throw DiaryApiException(
+        '빈 응답을 받았습니다. (${response.statusCode})',
+        statusCode: response.statusCode,
+      );
     }
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
     final success = decoded['success'];
     if (response.statusCode >= 400 || success == false) {
       final message = decoded['message']?.toString() ?? '요청이 실패했습니다.';
-      throw DiaryApiException(message);
+      throw DiaryApiException(message, statusCode: response.statusCode);
     }
     return decoded;
   }

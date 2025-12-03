@@ -9,6 +9,7 @@ import 'package:diary_garden/data/datasource/diary_api_client.dart';
 import 'package:diary_garden/data/models/diary_entry.dart';
 import 'package:diary_garden/data/models/remote_diary_entry.dart';
 import 'package:diary_garden/data/services/diary_sync_service.dart';
+import 'package:diary_garden/data/services/token_refresh_service.dart';
 import 'package:diary_garden/presentation/features/diary/diary_read_page.dart';
 import 'package:diary_garden/presentation/features/diary/diary_write_page.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +30,7 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage> {
   late final DiaryApiClient _diaryApiClient;
   late final DiarySyncService _syncService;
+  late final TokenRefreshService _tokenRefreshService;
   late final PageController _pageController;
   late WeekInfo _currentWeek;
   late List<_DayStatusModel> _dayStatuses;
@@ -42,6 +44,8 @@ class _MainPageState extends State<MainPage> {
     super.initState();
     _diaryApiClient = DiaryApiClient();
     _syncService = DiarySyncService(apiClient: _diaryApiClient);
+    _tokenRefreshService = TokenRefreshService();
+    _tokenRefreshService.onTokenExpired = _handleTokenExpired;
     _pageController = PageController(initialPage: 1); // Start at middle (current week)
     _currentWeek = WeekCalculator.getCurrentWeek();
     _dayStatuses = _generateWeekStatuses(_currentWeek);
@@ -155,6 +159,13 @@ class _MainPageState extends State<MainPage> {
       });
     } catch (error) {
       debugPrint('Failed to load diaries: $error');
+      
+      // 401 에러인 경우 토큰 갱신 시도
+      if (await _handleApiError(error)) {
+        // 토큰 갱신 성공, 재시도
+        return _loadRecentDiaries();
+      }
+      
       // API 실패 시에도 pending 상태는 표시
       if (mounted) {
         setState(() {
@@ -170,6 +181,37 @@ class _MainPageState extends State<MainPage> {
           _pendingCount = pendingDiaries.length;
         });
       }
+    }
+  }
+
+  /// API 에러 처리 (401 Unauthorized 감지 및 토큰 갱신)
+  /// 반환값: 토큰 갱신 성공 여부 (true면 재시도 가능)
+  Future<bool> _handleApiError(dynamic error) async {
+    if (error is DiaryApiException && error.isUnauthorized) {
+      debugPrint('🔐 Unauthorized error detected, attempting token refresh...');
+      final newToken = await _tokenRefreshService.refreshIfNeeded();
+      
+      if (newToken != null) {
+        setState(() {
+          _authToken = newToken;
+        });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 토큰 만료로 갱신 실패 시 호출되는 콜백
+  void _handleTokenExpired() {
+    debugPrint('🔐 Token expired, logging out...');
+    if (mounted) {
+      _showSnackBar('세션이 만료되었습니다. 다시 로그인해주세요.');
+      // 잠시 후 로그아웃
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          _handleLogout();
+        }
+      });
     }
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class TokenStorage {
   static const _tokenKey = 'auth_token';
+  static const _refreshTokenKey = 'refresh_token';
   static const _userKey = 'auth_user';
   static const _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(
@@ -13,14 +14,32 @@ class TokenStorage {
 
   const TokenStorage._();
 
+  /// AccessToken 저장 (하위 호환성)
   static Future<void> saveToken(String token) async {
     await _storage.write(key: _tokenKey, value: token);
+  }
+
+  /// AccessToken과 RefreshToken을 함께 저장
+  static Future<void> saveTokens({
+    required String accessToken,
+    String? refreshToken,
+  }) async {
+    await _storage.write(key: _tokenKey, value: accessToken);
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      await _storage.write(key: _refreshTokenKey, value: refreshToken);
+    }
   }
 
   static Future<String?> readToken() async {
     final token = await _storage.read(key: _tokenKey);
     if (token == null || token.isEmpty) return null;
     return token;
+  }
+
+  static Future<String?> readRefreshToken() async {
+    final refreshToken = await _storage.read(key: _refreshTokenKey);
+    if (refreshToken == null || refreshToken.isEmpty) return null;
+    return refreshToken;
   }
 
   static Future<void> saveUser({
@@ -56,6 +75,7 @@ class TokenStorage {
 
   static Future<void> clearToken() async {
     await _storage.delete(key: _tokenKey);
+    await _storage.delete(key: _refreshTokenKey);
     await _storage.delete(key: _userKey);
   }
 }

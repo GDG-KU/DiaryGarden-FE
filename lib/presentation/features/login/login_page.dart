@@ -80,7 +80,11 @@ class _LoginPageState extends State<LoginPage> {
         throw const AuthApiException('토큰이 응답에 없습니다. Firebase 로그인 토큰이 필요합니다.');
       }
 
-      await TokenStorage.saveToken(session.token);
+      // AccessToken과 RefreshToken 모두 저장
+      await TokenStorage.saveTokens(
+        accessToken: session.token,
+        refreshToken: session.refreshToken,
+      );
       await TokenStorage.saveUser(
         username: session.username.isNotEmpty ? session.username : username,
         displayName: session.displayName.isNotEmpty ? session.displayName : displayName,
