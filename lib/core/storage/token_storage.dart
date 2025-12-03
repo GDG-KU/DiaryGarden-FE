@@ -48,7 +48,8 @@ class TokenStorage {
         'username': decoded['username']?.toString() ?? '',
         'displayName': decoded['displayName']?.toString() ?? '',
       };
-    } catch (_) {
+    } catch (e) {
+      print('Failed to decode user data: $e');
       return null;
     }
   }
