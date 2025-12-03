@@ -81,6 +81,10 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       await TokenStorage.saveToken(session.token);
+      await TokenStorage.saveUser(
+        username: session.username.isNotEmpty ? session.username : username,
+        displayName: session.displayName.isNotEmpty ? session.displayName : displayName,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

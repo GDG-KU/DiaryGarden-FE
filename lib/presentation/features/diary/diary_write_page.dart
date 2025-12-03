@@ -187,6 +187,7 @@ class _DiaryWritePageState extends State<DiaryWritePage> {
             TextFormField(
               controller: _titleController,
               enabled: !_isSaving,
+              maxLength: 20,
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 16,
