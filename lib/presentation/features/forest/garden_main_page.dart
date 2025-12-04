@@ -266,8 +266,8 @@ class _GardenMainPageState extends State<GardenMainPage> {
         // Use the score for the dominant emotion
         score = diary.emotionScores[emotion]!;
       } else {
-        // Dominant emotion not in scores, use the highest available score
-        score = diary.emotionScores.values.reduce((a, b) => a > b ? a : b);
+        // Dominant emotion not in scores, use default
+        score = 1.0;
       }
       
       return {
