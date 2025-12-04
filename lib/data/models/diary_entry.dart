@@ -5,6 +5,7 @@ class DiaryEntry {
   final DateTime date;
   final Map<String, double> emotionScores;
   final String dominantEmotion;
+  final String? aiComment;
 
   DiaryEntry({
     required this.id,
@@ -13,5 +14,6 @@ class DiaryEntry {
     required this.date,
     required this.emotionScores,
     required this.dominantEmotion,
+    this.aiComment,
   });
 }
