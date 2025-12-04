@@ -50,12 +50,35 @@ class _DiaryReadPageState extends State<DiaryReadPage> {
           onPressed: () => Navigator.of(context).pop(),
           tooltip: '뒤로가기',
         ),
-        title: const Text(
-          '일기 읽기',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.bold,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '일기 읽기',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (_entries.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.leafGreen.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_entries.length}개',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         backgroundColor: AppColors.background,
         elevation: 0,
