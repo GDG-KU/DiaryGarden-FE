@@ -408,10 +408,13 @@ class _MainPageState extends State<MainPage> {
         id: localId,
         userId: '',
         treeId: '',
-        content: '$title\n\n$body',
+        title: title,
+        content: body,
         writtenDate: date,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
+        emotionScores: const {'default': 1.0},
+        dominantEmotion: 'default',
       );
     }
   }
@@ -501,14 +504,25 @@ class _MainPageState extends State<MainPage> {
   }
 
   DiaryEntry _toDiaryEntry(RemoteDiaryEntry entry) {
-    final parsed = splitDiaryContent(entry.content);
+    // Use title from server, fallback to parsing content if title is empty
+    String title = entry.title;
+    String content = entry.content;
+    
+    if (title.isEmpty) {
+      // Fallback: try to extract title from content (legacy format)
+      final parsed = splitDiaryContent(entry.content);
+      title = parsed.title.isEmpty ? '오늘 하루' : parsed.title;
+      content = parsed.body;
+    }
+    
     return DiaryEntry(
       id: entry.id,
-      title: parsed.title.isEmpty ? '오늘 하루' : parsed.title,
-      content: parsed.body, // Only use body to avoid title duplication
+      title: title,
+      content: content,
       date: entry.writtenDate,
-      emotionScores: const {'default': 1.0},
-      dominantEmotion: 'default',
+      emotionScores: entry.emotionScores,
+      dominantEmotion: entry.dominantEmotion,
+      aiComment: entry.aiComment,
     );
   }
 

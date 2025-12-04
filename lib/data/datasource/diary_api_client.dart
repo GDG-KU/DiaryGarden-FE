@@ -103,6 +103,17 @@ class DiaryApiClient {
     throw const DiaryApiException('일기 목록을 불러올 수 없습니다.');
   }
 
+  Future<RemoteDiaryEntry> analyzeDiary({
+    required String id,
+    required String authToken,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/api/diaries/$id/analyze');
+    final response = await _httpClient
+        .post(uri, headers: _headers(token: authToken))
+        .timeout(const Duration(seconds: 30));
+    return _parseDiary(response);
+  }
+
   RemoteDiaryEntry _parseDiary(http.Response response) {
     final decoded = _decodeResponse(response);
     final data = decoded['data'];

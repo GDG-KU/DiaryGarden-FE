@@ -250,19 +250,29 @@ class _GardenMainPageState extends State<GardenMainPage> {
   }
 
   List<Map<String, dynamic>> _generateEmotionData(List<RemoteDiaryEntry> diaries) {
-    // Match MainPage logic: map each diary to an emotion entry
+    // Map each diary to an emotion entry using server-provided emotion data
     return diaries.map((diary) {
-      // TODO: Parse actual emotion data from content if available
-      // For now, use default/placeholder logic similar to MainPage
-      // MainPage uses: emotion = 'default', score = 1.0 (if from _toDiaryEntry)
+      // Use the dominant emotion and its score from the server
+      // Fallback to 'default' if emotion data is empty or missing
+      final emotion = diary.dominantEmotion.isNotEmpty 
+          ? diary.dominantEmotion 
+          : 'default';
       
-      // If we had real emotion data:
-      // final emotion = diary.dominantEmotion;
-      // final score = diary.emotionScores[emotion];
+      final double score;
+      if (diary.emotionScores.isEmpty) {
+        // No emotion data available, use default
+        score = 1.0;
+      } else if (diary.emotionScores.containsKey(emotion)) {
+        // Use the score for the dominant emotion
+        score = diary.emotionScores[emotion]!;
+      } else {
+        // Dominant emotion not in scores, use default
+        score = 1.0;
+      }
       
       return {
-        'emotion': 'default',
-        'score': 1.0, // Use 1.0 to match MainPage's visual
+        'emotion': emotion,
+        'score': score > 0 ? score : 1.0, // Ensure at least 1.0 for visual
       };
     }).toList();
   }
