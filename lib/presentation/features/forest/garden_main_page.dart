@@ -65,7 +65,10 @@ class _GardenMainPageState extends State<GardenMainPage> {
     final token = _authToken;
     if (token == null) return;
 
-    debugPrint('🔄 Syncing ${_dirtyPositions.length} dirty positions for $_gardenLevel...');
+    // Capture current garden level to prevent changes during sync loop
+    final currentGardenLevel = _gardenLevel;
+
+    debugPrint('🔄 Syncing ${_dirtyPositions.length} dirty positions for $currentGardenLevel...');
 
     final successfulSyncs = <String>{};
 
@@ -78,9 +81,9 @@ class _GardenMainPageState extends State<GardenMainPage> {
 
       try {
         debugPrint('📤 Syncing tree $treeId at (${position.positionX.toStringAsFixed(3)}, ${position.positionY.toStringAsFixed(3)})');
-        final updated = await _forestApiClient.updateTreePosition(
+        await _forestApiClient.updateTreePosition(
           authToken: token,
-          gardenLevel: _gardenLevel,
+          gardenLevel: currentGardenLevel, // Use captured level
           treeId: treeId,
           positionX: position.positionX,
           positionY: position.positionY,
@@ -92,20 +95,23 @@ class _GardenMainPageState extends State<GardenMainPage> {
       }
     }
 
-    setState(() {
-      _dirtyPositions.removeWhere((id) => successfulSyncs.contains(id));
-    });
+    if (mounted) {
+      setState(() {
+        _dirtyPositions.removeWhere((id) => successfulSyncs.contains(id));
+      });
+    }
     
     if (_dirtyPositions.isNotEmpty) {
       debugPrint('⚠️ ${_dirtyPositions.length} positions failed to sync');
     } else {
-      debugPrint('✅ Position sync complete for $_gardenLevel');
+      debugPrint('✅ Position sync complete for $currentGardenLevel');
     }
   }
 
   Future<void> _loadData() async {
-    // Sync dirty positions from previous month before loading new data
-    await _syncDirtyPositions();
+    // Sync dirty positions is now handled in _changeMonth before state change
+    // await _syncDirtyPositions(); 
+
     
     setState(() => _loading = true);
     
@@ -290,7 +296,15 @@ class _GardenMainPageState extends State<GardenMainPage> {
     }
   }
 
-  void _changeMonth(int delta) async {
+  Future<void> _changeMonth(int delta) async {
+    if (_loading) return;
+    setState(() => _loading = true);
+
+    // Sync dirty positions BEFORE changing the month/gardenLevel
+    await _syncDirtyPositions();
+
+    if (!mounted) return;
+
     final newMonth = DateTime(_selectedMonth.year, _selectedMonth.month + delta, 1);
     setState(() {
       _selectedMonth = newMonth;
