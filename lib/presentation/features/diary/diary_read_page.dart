@@ -267,7 +267,7 @@ class _DiaryDetailDialogState extends State<_DiaryDetailDialog> {
   /// 재분석이 필요한지 확인
   /// aiComment가 없으면 감정 분석이 안 된 것으로 판단
   bool _needsReanalysis() {
-    return _currentEntry.aiComment == null || _currentEntry.aiComment!.isEmpty;
+    return _currentEntry.aiComment?.isEmpty ?? true;
   }
 
   /// 비동기로 감정 분석 재요청
