@@ -338,7 +338,7 @@ class _DiaryDetailDialogState extends State<_DiaryDetailDialog> {
   @override
   Widget build(BuildContext context) {
     final sortedScores = _currentEntry.emotionScores.entries
-        .where((e) => e.value > 0.05 && e.key != 'default')
+        .where((e) => e.value > 0.1 && e.key != 'default')
         .toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
