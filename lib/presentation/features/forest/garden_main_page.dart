@@ -1,6 +1,7 @@
 import 'package:diary_garden/core/config/api_config.dart';
 import 'package:diary_garden/core/storage/token_storage.dart';
 import 'package:diary_garden/core/storage/tree_position_storage.dart';
+import 'package:diary_garden/core/theme/app_colors.dart';
 import 'package:diary_garden/data/datasource/diary_api_client.dart';
 import 'package:diary_garden/data/datasource/forest_api_client.dart';
 import 'package:diary_garden/data/models/remote_diary_entry.dart';
@@ -369,6 +370,7 @@ class _GardenMainPageState extends State<GardenMainPage> {
       if (_viewMode == GardenViewMode.year) {
         setState(() => _loading = false);
       }
+    }
   }
 
   void _navigateToMonth(int month) {
