@@ -7,9 +7,7 @@ import 'package:diary_garden/data/models/remote_diary_entry.dart';
 import 'package:diary_garden/data/models/tree_position.dart';
 import 'package:diary_garden/core/utils/tree_vector_util.dart';
 import 'package:diary_garden/core/utils/week_calculator.dart';
-import 'package:diary_garden/core/theme/app_colors.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 /// Represents a tree for a specific week, aggregated from multiple diaries
 class WeeklyTree {
@@ -114,10 +112,6 @@ class _GardenMainPageState extends State<GardenMainPage> {
   }
 
   Future<void> _loadData() async {
-    // Sync dirty positions is now handled in _changeMonth before state change
-    // await _syncDirtyPositions(); 
-
-    
     setState(() => _loading = true);
     
     final token = await TokenStorage.readToken() ?? ApiConfig.maybeAuthToken;
