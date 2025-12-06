@@ -1,6 +1,7 @@
 import 'package:diary_garden/core/config/api_config.dart';
 import 'package:diary_garden/core/storage/token_storage.dart';
 import 'package:diary_garden/core/storage/tree_position_storage.dart';
+import 'package:diary_garden/core/theme/app_colors.dart';
 import 'package:diary_garden/data/datasource/diary_api_client.dart';
 import 'package:diary_garden/data/datasource/forest_api_client.dart';
 import 'package:diary_garden/data/models/remote_diary_entry.dart';
@@ -24,6 +25,9 @@ class WeeklyTree {
   final List<Map<String, dynamic>> averageEmotionData;
 }
 
+/// View mode for garden: month (current) or year (12 month grid)
+enum GardenViewMode { month, year }
+
 class GardenMainPage extends StatefulWidget {
   const GardenMainPage({super.key});
 
@@ -37,10 +41,12 @@ class _GardenMainPageState extends State<GardenMainPage> {
 
   String? _authToken;
   bool _loading = true;
-  List<WeeklyTree> _weeklyTrees = []; // Changed from _diaries
-  Map<String, TreePosition> _positions = {}; // weekId -> position
-  Set<String> _dirtyPositions = {}; // Track which positions changed
+  List<WeeklyTree> _weeklyTrees = [];
+  Map<String, TreePosition> _positions = {};
+  Set<String> _dirtyPositions = {};
   late DateTime _selectedMonth;
+  GardenViewMode _viewMode = GardenViewMode.month;
+  Map<int, int> _yearTreeCounts = {}; // month -> tree count
   String get _gardenLevel => '${_selectedMonth.year}-${_selectedMonth.month.toString().padLeft(2, '0')}';
 
   @override
@@ -316,9 +322,69 @@ class _GardenMainPageState extends State<GardenMainPage> {
     await _loadData();
   }
 
+  void _switchViewMode(GardenViewMode mode) {
+    if (_viewMode == mode) return;
+    setState(() => _viewMode = mode);
+    if (mode == GardenViewMode.year) {
+      _loadYearData();
+    }
+  }
+
+  Future<void> _loadYearData() async {
+    final token = _authToken;
+    if (token == null) return;
+
+    setState(() => _loading = true);
+
+    try {
+      // Fetch diaries for the entire year
+      final year = _selectedMonth.year;
+      final startDate = DateTime(year, 1, 1);
+      final endDate = DateTime(year + 1, 1, 1);
+
+      final diaries = await _diaryApiClient.fetchDiaries(
+        authToken: token,
+        writtenAfter: startDate,
+        writtenBefore: endDate,
+        limit: 400,
+      );
+
+      // Count trees per month (based on weeks)
+      final monthCounts = <int, Set<String>>{};
+      for (final diary in diaries) {
+        final weekInfo = WeekCalculator.getWeekInfo(diary.writtenDate);
+        final weekId = 'week_${weekInfo.weekId}';
+        monthCounts.putIfAbsent(weekInfo.month, () => {}).add(weekId);
+      }
+
+      if (!mounted) return;
+      if (mounted && _viewMode == GardenViewMode.year) {
+        setState(() {
+          _yearTreeCounts = monthCounts.map((k, v) => MapEntry(k, v.length));
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to load year data: $e');
+      if (!mounted) return;
+      if (_viewMode == GardenViewMode.year) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  void _navigateToMonth(int month) {
+    setState(() {
+      _selectedMonth = DateTime(_selectedMonth.year, month, 1);
+      _viewMode = GardenViewMode.month;
+    });
+    _loadData();
+  }
+
   @override
   Widget build(BuildContext context) {
     const offWhite = Color(0xFFFAF6EE);
+    final isMonthView = _viewMode == GardenViewMode.month;
 
     return Scaffold(
       backgroundColor: offWhite,
@@ -328,72 +394,223 @@ class _GardenMainPageState extends State<GardenMainPage> {
         foregroundColor: Colors.black,
         centerTitle: true,
         title: const Text('나의 숲'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ToggleButtons(
+              isSelected: [isMonthView, !isMonthView],
+              onPressed: (i) => _switchViewMode(
+                i == 0 ? GardenViewMode.month : GardenViewMode.year,
+              ),
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 32),
+              borderRadius: BorderRadius.circular(8),
+              selectedColor: Colors.white,
+              fillColor: AppColors.trunk,
+              color: AppColors.textSecondary,
+              children: const [Text('월'), Text('년')],
+            ),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Month navigation header
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.chevron_left),
-                        onPressed: () => _changeMonth(-1),
-                        tooltip: '이전 달',
+          : isMonthView
+              ? _buildMonthView()
+              : _buildYearView(),
+    );
+  }
+
+  Widget _buildMonthView() {
+    return Column(
+      children: [
+        // Month navigation header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: () => _changeMonth(-1),
+                tooltip: '이전 달',
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      '${_selectedMonth.year}년 ${_selectedMonth.month}월',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
                       ),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '나무 수: ${_weeklyTrees.length}그루',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: () => _changeMonth(1),
+                tooltip: '다음 달',
+              ),
+            ],
+          ),
+        ),
+
+        // Interactive forest area
+        Expanded(
+          child: _ForestCanvas(
+            weeklyTrees: _weeklyTrees,
+            positions: _positions,
+            onPositionUpdate: _updateTreePosition,
+          ),
+        ),
+
+        // Bottom hint
+        const Padding(
+          padding: EdgeInsets.fromLTRB(24, 24, 24, 36),
+          child: Text(
+            '나무를 드래그하여 자유롭게 배치할 수 있어요 🌳',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: Colors.black87),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildYearView() {
+    return Column(
+      children: [
+        // Year navigation header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: () {
+                  setState(() {
+                    _selectedMonth = DateTime(_selectedMonth.year - 1, 1, 1);
+                  });
+                  _loadYearData();
+                },
+                tooltip: '이전 년',
+              ),
+              Expanded(
+                child: Text(
+                  '${_selectedMonth.year}년',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: () {
+                  setState(() {
+                    _selectedMonth = DateTime(_selectedMonth.year + 1, 1, 1);
+                  });
+                  _loadYearData();
+                },
+                tooltip: '다음 년',
+              ),
+            ],
+          ),
+        ),
+
+        // 12 month grid
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: GridView.builder(
+              itemCount: 12,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.1,
+              ),
+              itemBuilder: (_, index) {
+                final month = index + 1;
+                final count = _yearTreeCounts[month] ?? 0;
+                final hasData = count > 0;
+                final intensity = (count / 5).clamp(0.0, 1.0);
+                
+                return GestureDetector(
+                  onTap: () => _navigateToMonth(month),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: hasData
+                          ? AppColors.leafGreen.withOpacity(0.15 + intensity * 0.4)
+                          : Colors.grey.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: hasData
+                            ? AppColors.leafGreen.withOpacity(0.5)
+                            : Colors.grey.withOpacity(0.2),
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$month월',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const Spacer(),
+                        Row(
                           children: [
-                            Text(
-                              '${_selectedMonth.year}년 ${_selectedMonth.month}월',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            Icon(
+                              Icons.park,
+                              size: 20,
+                              color: hasData
+                                  ? AppColors.leafGreen
+                                  : Colors.grey.withOpacity(0.4),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(width: 6),
                             Text(
-                              '나무 수: ${_weeklyTrees.length}그루', // Changed to tree count
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
+                              '$count그루',
+                              style: TextStyle(
+                                color: hasData
+                                    ? AppColors.textSecondary
+                                    : Colors.grey.withOpacity(0.6),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_right),
-                        onPressed: () => _changeMonth(1),
-                        tooltip: '다음 달',
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-
-                // Interactive forest area
-                Expanded(
-                  child: _ForestCanvas(
-                    weeklyTrees: _weeklyTrees, // Changed param
-                    positions: _positions,
-                    onPositionUpdate: _updateTreePosition,
-                  ),
-                ),
-
-                // Bottom hint
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(24, 24, 24, 36),
-                  child: Text(
-                    '나무를 드래그하여 자유롭게 배치할 수 있어요 🌳',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 15, color: Colors.black87),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
+          ),
+        ),
+
+        // Bottom hint
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 36),
+          child: Text(
+            '월을 탭하면 해당 월로 이동해요',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: Colors.black87),
+          ),
+        ),
+      ],
     );
   }
 }

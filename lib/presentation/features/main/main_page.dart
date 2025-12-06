@@ -12,6 +12,10 @@ import 'package:diary_garden/data/services/diary_sync_service.dart';
 import 'package:diary_garden/data/services/token_refresh_service.dart';
 import 'package:diary_garden/presentation/features/diary/diary_read_page.dart';
 import 'package:diary_garden/presentation/features/diary/diary_write_page.dart';
+import 'package:diary_garden/presentation/features/menu/menu_sheet.dart';
+import 'package:diary_garden/presentation/features/settings/settings_page.dart';
+import 'package:diary_garden/presentation/features/help/help_page.dart';
+import 'package:diary_garden/presentation/features/stats/emotion_stats_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -532,7 +536,35 @@ class _MainPageState extends State<MainPage> {
   }
 
   void _handleMenuTap() {
-    _showSnackBar('메뉴 화면은 준비 중입니다.');
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => MenuSheet(
+        onStatsTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const EmotionStatsPage()),
+          );
+        },
+        onSettingsTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SettingsPage()),
+          );
+        },
+        onHelpTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const HelpPage()),
+          );
+        },
+      ),
+    );
+  }
+
+  void _openWeeklyDiaries() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DiaryReadPage(entries: _weekDiaries),
+      ),
+    );
   }
 
   void _handleProfileTap() {
@@ -568,6 +600,7 @@ class _MainPageState extends State<MainPage> {
                 onMenuTap: _handleMenuTap,
                 onCalendarTap: _openCalendar,
                 onProfileTap: _handleProfileTap,
+                onWeekHeaderTap: _openWeeklyDiaries,
               ),
             ),
             _FloatingWriteButton(onPressed: _openWritePage),
@@ -589,6 +622,7 @@ class _MainScrollView extends StatelessWidget {
     required this.onMenuTap,
     required this.onCalendarTap,
     required this.onProfileTap,
+    required this.onWeekHeaderTap,
   });
 
   final PageController pageController;
@@ -600,6 +634,7 @@ class _MainScrollView extends StatelessWidget {
   final VoidCallback onMenuTap;
   final VoidCallback onCalendarTap;
   final VoidCallback onProfileTap;
+  final VoidCallback onWeekHeaderTap;
 
   @override
   Widget build(BuildContext context) {
@@ -617,7 +652,7 @@ class _MainScrollView extends StatelessWidget {
           ),
           const SizedBox(height: 32),
           // Week header (e.g., "12월 3주차")
-          _WeekHeader(weekInfo: currentWeek),
+          _WeekHeader(weekInfo: currentWeek, onTap: onWeekHeaderTap),
           const SizedBox(height: 16),
           const _DayHeaderRow(),
           const SizedBox(height: 10),
@@ -736,21 +771,45 @@ class _TopIconButton extends StatelessWidget {
 }
 
 class _WeekHeader extends StatelessWidget {
-  const _WeekHeader({required this.weekInfo});
+  const _WeekHeader({required this.weekInfo, this.onTap});
 
   final WeekInfo weekInfo;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Center(
-        child: Text(
-          weekInfo.displayLabel, // e.g., "12월 3주차"
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              color: onTap != null ? AppColors.trunk.withOpacity(0.08) : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  weekInfo.displayLabel, // e.g., "12월 3주차"
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (onTap != null) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: AppColors.textSecondary.withOpacity(0.6),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
