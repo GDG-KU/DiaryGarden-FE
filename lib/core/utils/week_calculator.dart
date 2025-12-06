@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 
 /// Information about a specific week
 class WeekInfo {

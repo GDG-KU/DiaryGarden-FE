@@ -12,6 +12,10 @@ import 'package:diary_garden/data/services/diary_sync_service.dart';
 import 'package:diary_garden/data/services/token_refresh_service.dart';
 import 'package:diary_garden/presentation/features/diary/diary_read_page.dart';
 import 'package:diary_garden/presentation/features/diary/diary_write_page.dart';
+import 'package:diary_garden/presentation/features/menu/menu_sheet.dart';
+import 'package:diary_garden/presentation/features/settings/settings_page.dart';
+import 'package:diary_garden/presentation/features/help/help_page.dart';
+import 'package:diary_garden/presentation/features/stats/emotion_stats_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -495,14 +499,6 @@ class _MainPageState extends State<MainPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  String _composeContent(String title, String body) {
-    final trimmedTitle = title.trim();
-    final trimmedBody = body.trim();
-    if (trimmedBody.isEmpty) return trimmedTitle;
-    if (trimmedTitle.isEmpty) return trimmedBody;
-    return '$trimmedTitle\n\n$trimmedBody';
-  }
-
   DiaryEntry _toDiaryEntry(RemoteDiaryEntry entry) {
     // Use title from server, fallback to parsing content if title is empty
     String title = entry.title;
@@ -510,7 +506,7 @@ class _MainPageState extends State<MainPage> {
     
     if (title.isEmpty) {
       // Fallback: try to extract title from content (legacy format)
-      final parsed = splitDiaryContent(entry.content);
+      final parsed = _splitDiaryContent(entry.content);
       title = parsed.title.isEmpty ? '오늘 하루' : parsed.title;
       content = parsed.body;
     }
@@ -526,12 +522,49 @@ class _MainPageState extends State<MainPage> {
     );
   }
 
+  ({String title, String body}) _splitDiaryContent(String content) {
+    final segments = content.split('\n\n');
+    final title = segments.isNotEmpty ? segments.first.trim() : '';
+    final body = segments.length > 1
+        ? segments.sublist(1).join('\n\n').trim()
+        : '';
+    return (title: title, body: body);
+  }
+
   void _openCalendar() {
     Navigator.of(context).pushNamed('/home');
   }
 
   void _handleMenuTap() {
-    _showSnackBar('메뉴 화면은 준비 중입니다.');
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => MenuSheet(
+        onStatsTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const EmotionStatsPage()),
+          );
+        },
+        onSettingsTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SettingsPage()),
+          );
+        },
+        onHelpTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const HelpPage()),
+          );
+        },
+      ),
+    );
+  }
+
+  void _openWeeklyDiaries() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DiaryReadPage(entries: _weekDiaries),
+      ),
+    );
   }
 
   void _handleProfileTap() {
@@ -567,6 +600,7 @@ class _MainPageState extends State<MainPage> {
                 onMenuTap: _handleMenuTap,
                 onCalendarTap: _openCalendar,
                 onProfileTap: _handleProfileTap,
+                onWeekHeaderTap: _openWeeklyDiaries,
               ),
             ),
             _FloatingWriteButton(onPressed: _openWritePage),
@@ -588,6 +622,7 @@ class _MainScrollView extends StatelessWidget {
     required this.onMenuTap,
     required this.onCalendarTap,
     required this.onProfileTap,
+    required this.onWeekHeaderTap,
   });
 
   final PageController pageController;
@@ -599,6 +634,7 @@ class _MainScrollView extends StatelessWidget {
   final VoidCallback onMenuTap;
   final VoidCallback onCalendarTap;
   final VoidCallback onProfileTap;
+  final VoidCallback onWeekHeaderTap;
 
   @override
   Widget build(BuildContext context) {
@@ -616,7 +652,7 @@ class _MainScrollView extends StatelessWidget {
           ),
           const SizedBox(height: 32),
           // Week header (e.g., "12월 3주차")
-          _WeekHeader(weekInfo: currentWeek),
+          _WeekHeader(weekInfo: currentWeek, onTap: onWeekHeaderTap),
           const SizedBox(height: 16),
           const _DayHeaderRow(),
           const SizedBox(height: 10),
@@ -735,21 +771,45 @@ class _TopIconButton extends StatelessWidget {
 }
 
 class _WeekHeader extends StatelessWidget {
-  const _WeekHeader({required this.weekInfo});
+  const _WeekHeader({required this.weekInfo, this.onTap});
 
   final WeekInfo weekInfo;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Center(
-        child: Text(
-          weekInfo.displayLabel, // e.g., "12월 3주차"
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              color: onTap != null ? AppColors.trunk.withOpacity(0.08) : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  weekInfo.displayLabel, // e.g., "12월 3주차"
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (onTap != null) ...[
+                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: AppColors.textSecondary.withOpacity(0.6),
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1262,299 +1322,6 @@ class _ProfileDialogState extends State<ProfileDialog> {
       ),
     );
   }
-}
-
-class WriteDiaryDialog extends StatefulWidget {
-  const WriteDiaryDialog({
-    required this.date,
-    required this.onSubmit,
-    super.key,
-  });
-
-  final DateTime date;
-  final Future<RemoteDiaryEntry> Function(String title, String content)
-  onSubmit;
-
-  @override
-  State<WriteDiaryDialog> createState() => _WriteDiaryDialogState();
-}
-
-class _WriteDiaryDialogState extends State<WriteDiaryDialog> {
-  final _titleController = TextEditingController();
-  final _bodyController = TextEditingController();
-  bool _isSaving = false;
-  String? _errorMessage;
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _bodyController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handleSave() async {
-    final title = _titleController.text.trim();
-    final body = _bodyController.text.trim();
-    if (title.isEmpty && body.isEmpty) {
-      setState(() => _errorMessage = '제목 또는 본문을 입력해주세요.');
-      return;
-    }
-
-    setState(() {
-      _isSaving = true;
-      _errorMessage = null;
-    });
-
-    try {
-      await widget.onSubmit(title, body);
-      if (!mounted) return;
-      Navigator.of(context).pop();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _isSaving = false;
-        _errorMessage = error is DiaryApiException
-            ? error.message
-            : '저장에 실패했습니다.';
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final dateLabel = DateFormat('M월 d일', 'ko').format(widget.date);
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: SingleChildScrollView(
-        child: _DiaryModalCard(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _DiaryModalHeader(title: dateLabel),
-              const SizedBox(height: 24),
-              _DiaryFieldLabel('제목'),
-              const SizedBox(height: 8),
-              _DiaryTextField(
-                controller: _titleController,
-                hintText: '제목을 입력하세요',
-                textInputAction: TextInputAction.next,
-                enabled: !_isSaving,
-              ),
-              const SizedBox(height: 16),
-              _DiaryFieldLabel('본문'),
-              const SizedBox(height: 8),
-              _DiaryTextField(
-                controller: _bodyController,
-                hintText:
-                    '오늘 하루는 어땠나요?'
-                    '\n느낀 점을 자유롭게 적어 보세요.',
-                maxLines: 8,
-                enabled: !_isSaving,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black87,
-                    shadowColor: const Color(0x40000000),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 4,
-                  ),
-                  onPressed: _isSaving ? null : _handleSave,
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('저장하기'),
-                ),
-              ),
-              if (_errorMessage != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _errorMessage!,
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class ViewDiaryDialog extends StatelessWidget {
-  const ViewDiaryDialog({required this.date, required this.entry, super.key});
-
-  final DateTime date;
-  final RemoteDiaryEntry entry;
-
-  @override
-  Widget build(BuildContext context) {
-    final dateLabel = DateFormat('M월 d일', 'ko').format(date);
-    final parsed = splitDiaryContent(entry.content);
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: SingleChildScrollView(
-        child: _DiaryModalCard(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _DiaryModalHeader(title: dateLabel),
-              const SizedBox(height: 24),
-              Text(
-                parsed.title.isEmpty ? '오늘 하루' : parsed.title,
-                style: const TextStyle(fontSize: 20),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.black.withOpacity(0.1)),
-                ),
-                child: Text(
-                  parsed.body.isEmpty ? parsed.title : parsed.body,
-                  style: const TextStyle(fontSize: 14, height: 1.5),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DiaryModalCard extends StatelessWidget {
-  const _DiaryModalCard({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 16,
-            offset: Offset(4, 8),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class _DiaryModalHeader extends StatelessWidget {
-  const _DiaryModalHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: const TextStyle(fontSize: 24)),
-        IconButton(
-          splashRadius: 20,
-          onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.close_rounded, size: 24),
-        ),
-      ],
-    );
-  }
-}
-
-class _DiaryFieldLabel extends StatelessWidget {
-  const _DiaryFieldLabel(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(text, style: const TextStyle(fontSize: 16));
-  }
-}
-
-class _DiaryTextField extends StatelessWidget {
-  const _DiaryTextField({
-    required this.controller,
-    required this.hintText,
-    this.maxLines = 1,
-    this.textInputAction,
-    this.enabled = true,
-  });
-
-  final TextEditingController controller;
-  final String hintText;
-  final int maxLines;
-  final TextInputAction? textInputAction;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      enabled: enabled,
-      maxLines: maxLines,
-      textInputAction: textInputAction,
-      decoration: InputDecoration(
-        hintText: hintText,
-        filled: true,
-        fillColor: Colors.white.withOpacity(0.5),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(0.1)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(0.1)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(0.2)),
-        ),
-      ),
-    );
-  }
-}
-
-_ModalContent splitDiaryContent(String content) {
-  final segments = content.split('\n\n');
-  final title = segments.isNotEmpty ? segments.first.trim() : '';
-  final body = segments.length > 1
-      ? segments.sublist(1).join('\n\n').trim()
-      : '';
-  return _ModalContent(title: title, body: body);
-}
-
-class _ModalContent {
-  const _ModalContent({required this.title, required this.body});
-
-  final String title;
-  final String body;
 }
 
 class _SvgAssetPicture extends StatefulWidget {

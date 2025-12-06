@@ -31,7 +31,9 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
+# Ignore build folder except build/web
+/build/*
+!/build/web/
 /coverage/
 
 # Flutter Generated Files (자동 생성 파일들)
