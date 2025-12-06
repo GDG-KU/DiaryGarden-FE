@@ -363,15 +363,18 @@ class _GardenMainPageState extends State<GardenMainPage> {
       }
 
       if (!mounted) return;
-      setState(() {
-        _yearTreeCounts = monthCounts.map((k, v) => MapEntry(k, v.length));
-        _loading = false;
-      });
+      if (mounted && _viewMode == GardenViewMode.year) {
+        setState(() {
+          _yearTreeCounts = monthCounts.map((k, v) => MapEntry(k, v.length));
+          _loading = false;
+        });
+      }
     } catch (e) {
       debugPrint('❌ Failed to load year data: $e');
       if (!mounted) return;
-      setState(() => _loading = false);
-    }
+      if (_viewMode == GardenViewMode.year) {
+        setState(() => _loading = false);
+      }
   }
 
   void _navigateToMonth(int month) {
